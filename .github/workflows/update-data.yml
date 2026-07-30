@@ -1,0 +1,92 @@
+# TCGX · Nightly REAL data updater (replaces update-prices.yml — delete that file)
+# Path in repo: .github/workflows/update-data.yml
+# Repo secrets: WORKER_URL, ADMIN_KEY, optional POKEMONTCG_API_KEY (free key from pokemontcg.io = higher limits)
+#
+# 1) Real TCGplayer market prices for English Pokémon chase cards via pokemontcg.io
+# 2) Real headlines from PokéBeach's RSS feed
+# Nothing is invented: if a source is unreachable, nothing is written.
+
+name: Update TCGX real data
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch real card prices + news
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
+          PTCG_KEY: ${{ secrets.POKEMONTCG_API_KEY }}
+        run: |
+          node - <<'EOF'
+          const W = process.env.WORKER_URL, KEY = process.env.ADMIN_KEY, PT = process.env.PTCG_KEY;
+          const H = PT ? { "X-Api-Key": PT } : {};
+          // Card keys must match Cards.set_id + name in D1 / the site exactly.
+          const EN_CARDS = [
+            { key:"card|sv8pt5|Umbreon ex 161 (SIR)",  q:'set.id:sv8pt5 number:161' },
+            { key:"card|sv8pt5|Sylveon ex 156 (SIR)",  q:'set.id:sv8pt5 number:156' },
+            { key:"card|sv8pt5|Espeon ex 155 (SIR)",   q:'set.id:sv8pt5 number:155' },
+            { key:"card|sv8pt5|Leafeon ex 144 (SIR)",  q:'set.id:sv8pt5 number:144' },
+            { key:"card|sv8pt5|Glaceon ex 150 (SIR)",  q:'set.id:sv8pt5 number:150' },
+            { key:"card|sv8|Pikachu ex 238 (SIR)",     q:'set.id:sv8 number:238' },
+            { key:"card|sv8|Latias ex 239 (SIR)",      q:'set.id:sv8 number:239' },
+            { key:"card|sv8|Milotic ex 237 (SIR)",     q:'set.id:sv8 number:237' },
+            { key:"card|sv3pt5|Charizard ex 199 (SIR)",q:'set.id:sv3pt5 number:199' },
+            { key:"card|swsh7|Umbreon VMAX (Moonbreon)", q:'set.id:swsh7 name:"Umbreon VMAX"', pickMax:true },
+            { key:"card|swsh7|Rayquaza VMAX alt",        q:'set.id:swsh7 name:"Rayquaza VMAX"', pickMax:true },
+            { key:"card|swsh7|Sylveon VMAX alt",         q:'set.id:swsh7 name:"Sylveon VMAX"',  pickMax:true },
+          ];
+          const bestMarket = card => {
+            const pr = card?.tcgplayer?.prices || {};
+            const vals = Object.values(pr).map(x => x?.market).filter(v => typeof v === "number" && v > 0);
+            return vals.length ? Math.max(...vals) : null;
+          };
+          (async () => {
+            // ---- 1) real card prices ----
+            const rows = [];
+            for (const c of EN_CARDS) {
+              try {
+                const r = await fetch("https://api.pokemontcg.io/v2/cards?q=" + encodeURIComponent(c.q), { headers: H });
+                if (!r.ok) { console.log("MISS", c.key, r.status); continue; }
+                const data = (await r.json()).data || [];
+                if (!data.length) { console.log("MISS (no results)", c.key); continue; }
+                let price;
+                if (c.pickMax) {
+                  price = Math.max(...data.map(bestMarket).filter(v => v != null));
+                  if (!isFinite(price)) price = null;
+                } else price = bestMarket(data[0]);
+                if (price != null) { rows.push({ item_id: c.key, market_price_usd: +price.toFixed(2) }); console.log("OK", c.key, price); }
+                else console.log("MISS (no market price)", c.key);
+                await new Promise(res => setTimeout(res, 300));
+              } catch (e) { console.log("ERR", c.key, e.message); }
+            }
+            if (rows.length) {
+              const r = await fetch(W + "/api/prices", { method: "POST",
+                headers: { "Content-Type": "application/json", "Authorization": "Bearer " + KEY },
+                body: JSON.stringify(rows) });
+              console.log("prices saved:", await r.text());
+            } else console.log("No card prices fetched — nothing written.");
+
+            // ---- 2) real news from PokéBeach RSS ----
+            try {
+              const feed = await (await fetch("https://www.pokebeach.com/feed")).text();
+              const items = [...feed.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, 6).map(m => {
+                const g = (tag) => {
+                  const mm = m[1].match(new RegExp("<" + tag + ">(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/" + tag + ">"));
+                  return mm ? mm[1].trim() : "";
+                };
+                return { title: g("title"), url: g("link") };
+              }).filter(x => x.title && x.url);
+              for (const it of items) {
+                const r = await fetch(W + "/api/news", { method: "POST",
+                  headers: { "Content-Type": "application/json", "Authorization": "Bearer " + KEY },
+                  body: JSON.stringify({ title: it.title, url: it.url, body: "", tags: "Pokémon, PokéBeach" }) });
+                console.log("news:", it.title.slice(0, 60), await r.text());
+              }
+            } catch (e) { console.log("RSS ERR", e.message); }
+          })();
+          EOF
