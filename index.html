@@ -235,6 +235,25 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;heigh
 .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);font-family:var(--mono)}
 .legend i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px}
 
+.qm{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:15px;height:15px;border-radius:50%;flex:none;
+  border:1px solid var(--line-strong);color:var(--muted);
+  font-family:var(--mono);font-size:9.5px;font-weight:700;line-height:1;
+  margin-left:6px;vertical-align:1px;cursor:help;transition:all .15s;
+}
+.qm:hover{color:#c3cbff;border-color:var(--grade);background:rgba(129,140,248,.12)}
+.hintpop{
+  position:fixed;z-index:200;display:none;
+  background:var(--panel-solid);border:1px solid var(--line-strong);border-radius:14px;
+  padding:14px 16px;box-shadow:0 18px 50px rgba(0,0,0,.55);
+}
+.hintpop.open{display:block;animation:hintin .16s ease-out}
+@keyframes hintin{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+.hintpop .hp-t{font-weight:700;font-size:13px;margin-bottom:6px;background:var(--foil);-webkit-background-clip:text;background-clip:text;color:transparent;display:inline-block}
+.hintpop .hp-b{color:var(--muted);font-size:12.5px;line-height:1.65}
+.hintpop .hp-b b{color:var(--text);font-weight:600}
+
 .empty{padding:40px 20px;text-align:center;color:var(--muted);line-height:1.8;font-size:13.5px}
 .toast{
   position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);
@@ -294,6 +313,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;heigh
 </div>
 
 <div class="toast" id="toast"></div>
+<div class="hintpop" id="hintpop"></div>
 
 <script>
 /* ============================================================
@@ -524,6 +544,53 @@ const fmt = n => "$" + n.toLocaleString("en-US",{maximumFractionDigits:0});
 const fmt2 = n => "$" + n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
 const pct = n => (n>=0?"+":"") + n.toFixed(1) + "%";
 const cls = n => n>=0 ? "pos" : "neg";
+
+/* ---------- Plain-language help ---------- */
+const HINTS = {
+  index:{t:"TCGX Sealed Index",b:"An average of all tracked products' prices, scaled so that 90 days ago = 100. A reading of 106 means the sealed market is up ~6% over the period. Think of it as the S&P 500, but for cardboard."},
+  breakzone:{t:"BREAK zone",b:"How many products are currently worth <b>more opened than sealed</b> — the cards you'd statistically pull are worth more than the box costs, even after selling fees."},
+  breakroi:{t:"Break ROI",b:"Your expected profit if you buy at this price, open everything, and sell all the cards. <b>+10%</b> means $100 in returns about $110 after fees — <b>on average, over many boxes</b>. Any single box can land far above or below; the average only shows up with volume."},
+  breakvalue:{t:"Break value (net)",b:"The total worth of the cards statistically inside this product: every card's price × its pull rate, summed up, minus selling fees. It's what opening the product is 'worth' on average."},
+  heat:{t:"Heat",b:"A 0–100 momentum score based on the last 7 and 30 days of price movement. <b>50</b> = flat, higher = climbing fast right now, lower = falling."},
+  verdict:{t:"The verdict",b:"<b>BREAK</b> = opening it beats the sealed price — the contents are worth more than the box. <b>HOLD</b> = the sealed product costs more than its contents; keep it closed and let it appreciate. <b>GRADE</b> = opening it AND grading the big hits is the best play."},
+  market:{t:"Market price",b:"The current going rate to buy this sealed product."},
+  besthold:{t:"12-month hold",b:"How much this sealed product's price rose over the last 12 months if you simply left it on the shelf. Sealed product often appreciates because supply only shrinks — every opened box is one fewer in the world."},
+  cagr:{t:"Sealed 12m trend",b:"How much the sealed price changed over the last 12 months. If this beats the break ROI, keeping it closed has been the better trade."},
+  gradedbreak:{t:"Break + grade",b:"Expected result if you open the product AND send the big hits (cards worth $100+) to PSA for grading instead of selling them raw. Only shown when grading actually adds value."},
+  evpack:{t:"Expected value per pack",b:"What one pack is worth <b>on average</b>: each possible hit's price × its odds, plus a little bulk value. Most individual packs are worth less than this and rare packs are worth much more — it evens out over volume."},
+  pullrate:{t:"Pull rate",b:"The odds of one pack containing this card. <b>1 : 1,530</b> means on average one copy shows up per 1,530 packs opened."},
+  perproduct:{t:"Per product",b:"The expected number of copies inside this whole product. <b>23.5%</b> ≈ one copy in every four such products; <b>2.0×</b> ≈ about two copies per product."},
+  rawprice:{t:"Raw price",b:"What the card sells for ungraded, straight out of the pack."},
+  psa10:{t:"PSA 10 price",b:"What the card sells for with a perfect grade of 10 from PSA. Grading = sending the card to a company that authenticates it, scores its condition 1–10, and seals it in a protective case. A 10 can multiply a card's value."},
+  gradeev:{t:"Grade EV",b:"What sending this card to PSA is worth on average: your gem-rate chance of getting the PSA 10 price, otherwise a lower-grade price, minus the grading fee. <b>Green</b> = grading beats selling raw. Only computed for $100+ cards."},
+  evcontrib:{t:"EV contribution",b:"How much of the product's total break value comes from this one card (pull rate × price × pack count). Shows which cards actually carry the box — often it's just two or three."},
+  buyin:{t:"Your buy-in",b:"What <b>you</b> actually pay. The verdicts elsewhere assume market price, but a good deal changes everything — buying 20% under market can flip a HOLD into a BREAK. Leave at 0 to use the market price."},
+  sellfee:{t:"Selling fee haircut",b:"The slice you lose when selling the pulled cards. It bundles marketplace commission (eBay/Cardmarket take roughly 10–13%), payment processing, shipping and supplies. At <b>13%</b>, a $100 card puts about <b>$87</b> in your pocket. Selling locally with no fees? Slide it down and watch the ROI improve."},
+  gradefee:{t:"Grading fee",b:"What PSA charges per card, plus shipping to and from them. Cheapest tiers run roughly $15–25 per card. A card must gain more than this from the grade for the submission to pay off."},
+  gemrate:{t:"Gem rate",b:"The probability a card comes back <b>PSA 10</b> ('gem mint'). It depends on print quality and how well you pre-screen centering and surface. Japanese cards often gem at 60%+, English modern closer to 45–55%."},
+  psa9:{t:"PSA 9 price",b:"What the card sells for if it grades a 9 instead of a 10 — your consolation prize. Leave at 0 and we assume 75% of the raw price, a common pattern for modern cards."},
+  breakeven:{t:"Break-even gem rate",b:"The minimum PSA 10 probability at which grading stops losing money. If your realistic gem rate is <b>above</b> this number, grade the card; if below, sell it raw."},
+  pl:{t:"Unrealised P/L",b:"Paper profit: what your positions are worth at today's prices versus what you paid. 'Unrealised' because it only becomes real money when you actually sell — and selling fees will take their cut then."},
+};
+const hint = k => `<button class="qm" data-hint="${k}" aria-label="What does this mean?">?</button>`;
+const hintEl = () => document.getElementById("hintpop");
+function showHint(btn){
+  const h = HINTS[btn.dataset.hint]; if(!h) return;
+  const el = hintEl();
+  el.innerHTML = `<div class="hp-t">${h.t}</div><div class="hp-b">${h.b}</div>`;
+  const w = Math.min(320, window.innerWidth - 24);
+  el.style.width = w + "px";
+  el.classList.add("open");
+  const r = btn.getBoundingClientRect();
+  let x = Math.min(Math.max(12, r.left + r.width/2 - w/2), window.innerWidth - w - 12);
+  el.style.left = x + "px";
+  const hh = el.offsetHeight;
+  let y = r.bottom + 8;
+  if(y + hh > window.innerHeight - 12) y = r.top - hh - 8;
+  el.style.top = Math.max(12, y) + "px";
+}
+function hideHint(){ hintEl().classList.remove("open"); }
+window.addEventListener("scroll", hideHint, {passive:true});
 let currentView = "dashboard";
 let detailId = null;
 let charts = [];
@@ -588,10 +655,10 @@ function vDashboard(){
   <h1 class="pagetitle">Trading floor</h1>
   <p class="pagesub">The whole sealed market at a glance — the index, what's moving, and where the math says the cardboard is worth more open than closed.</p>
   <div class="grid g-4" style="margin-bottom:16px">
-    <div class="panel stat"><div class="v">${idxNow.toFixed(1)}</div><div class="lbl">TCGX Sealed Index</div><div class="chg ${cls(idxNow-idxPrev)}">${pct((idxNow/idxPrev-1)*100)} · 30d</div></div>
-    <div class="panel stat"><div class="v">${PRODUCTS.filter(p=>valuation(p).verdict==="BREAK").length}</div><div class="lbl">Products in BREAK zone</div><div class="chg neu">of ${PRODUCTS.length} tracked</div></div>
-    <div class="panel stat"><div class="v">${pct(Math.max(...PRODUCTS.map(p=>valuation(p).breakROI)))}</div><div class="lbl">Best break ROI on the board</div><div class="chg pos">net of ${(SELL_FEES*100).toFixed(0)}% fees</div></div>
-    <div class="panel stat"><div class="v">${pct(Math.max(...PRODUCTS.map(p=>valuation(p).cagr)))}</div><div class="lbl">Best 12-month hold</div><div class="chg pos">sealed appreciation</div></div>
+    <div class="panel stat"><div class="v">${idxNow.toFixed(1)}</div><div class="lbl">TCGX Sealed Index ${hint("index")}</div><div class="chg ${cls(idxNow-idxPrev)}">${pct((idxNow/idxPrev-1)*100)} · 30d</div></div>
+    <div class="panel stat"><div class="v">${PRODUCTS.filter(p=>valuation(p).verdict==="BREAK").length}</div><div class="lbl">Products in BREAK zone ${hint("breakzone")}</div><div class="chg neu">of ${PRODUCTS.length} tracked</div></div>
+    <div class="panel stat"><div class="v">${pct(Math.max(...PRODUCTS.map(p=>valuation(p).breakROI)))}</div><div class="lbl">Best break ROI on the board ${hint("breakroi")}</div><div class="chg pos">net of ${(SELL_FEES*100).toFixed(0)}% fees</div></div>
+    <div class="panel stat"><div class="v">${pct(Math.max(...PRODUCTS.map(p=>valuation(p).cagr)))}</div><div class="lbl">Best 12-month hold ${hint("besthold")}</div><div class="chg pos">sealed appreciation</div></div>
   </div>
   <div class="grid g-2">
     <div class="panel" style="grid-column:1/-1">
@@ -644,8 +711,8 @@ function vMarkets(){
   <p class="pagesub">Every tracked sealed product with live pricing, momentum and the engine's current verdict. Click a row for full valuation and charts.</p>
   <div class="panel" style="overflow-x:auto">
     <table><thead><tr>
-      <th>Product</th><th class="num">Market</th><th class="num">24h</th><th class="num">30d</th>
-      <th class="num">Break value</th><th class="num">Break ROI</th><th class="num">Heat</th><th>30d</th><th class="num">Verdict</th><th></th>
+      <th>Product</th><th class="num">Market ${hint("market")}</th><th class="num">24h</th><th class="num">30d</th>
+      <th class="num">Break value ${hint("breakvalue")}</th><th class="num">Break ROI ${hint("breakroi")}</th><th class="num">Heat ${hint("heat")}</th><th>30d</th><th class="num">Verdict ${hint("verdict")}</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table>
   </div>`;
 }
@@ -690,11 +757,11 @@ function vDetail(id){
   </div>
   <div class="grid g-2" style="margin-bottom:16px">
     <div class="panel">
-      <h3>Verdict</h3>
+      <h3>Verdict ${hint("verdict")}</h3>
       ${dialHTML(v)}
       <div class="verdict-sub">
-        Net break value <b>${fmt(v.netBreak)}</b> vs market <b>${fmt(v.mkt)}</b> → break ROI <b class="${cls(v.breakROI)}">${pct(v.breakROI)}</b><br>
-        Break + grade hits: <b>${fmt(v.gradedBreak)}</b> (<b class="${cls(v.gradeROI)}">${pct(v.gradeROI)}</b>) · 12m sealed hold: <b class="${cls(v.cagr)}">${pct(v.cagr)}</b>
+        Net break value <b>${fmt(v.netBreak)}</b> vs market <b>${fmt(v.mkt)}</b> → break ROI <b class="${cls(v.breakROI)}">${pct(v.breakROI)}</b> ${hint("breakroi")}<br>
+        Break + grade hits: <b>${fmt(v.gradedBreak)}</b> (<b class="${cls(v.gradeROI)}">${pct(v.gradeROI)}</b>) ${hint("gradedbreak")} · 12m sealed hold: <b class="${cls(v.cagr)}">${pct(v.cagr)}</b> ${hint("cagr")}
       </div>
       <div style="display:flex;gap:8px;margin-top:16px;justify-content:center">
         <button class="btn sm" data-watch="${p.id}">${isWatched(p.id)?"★ Watching":"☆ Watch"}</button>
@@ -708,14 +775,14 @@ function vDetail(id){
     </div>
   </div>
   <div class="panel" style="margin-bottom:16px">
-    <h3>Expected value composition · ${fmt2(evPack)} / pack</h3>
+    <h3>Expected value composition · ${fmt2(evPack)} / pack ${hint("evpack")}</h3>
     <div class="evbar">${evParts.map(x=>`<div style="width:${x.v/evTot*100}%;background:${x.c}"></div>`).join("")}</div>
     <div class="legend">${evParts.map(x=>`<span><i style="background:${x.c}"></i>${x.l} ${fmt(Math.round(x.v))}</span>`).join("")}
       <span style="margin-left:auto">Gross break value ${fmt(v.rawBreak)} → net ${fmt(v.netBreak)} after ${(SELL_FEES*100).toFixed(0)}% fees</span></div>
   </div>
   <div class="panel" style="overflow-x:auto">
     <h3>Hit table & grading premiums</h3>
-    <table><thead><tr><th>Card</th><th class="num">Pull rate</th><th class="num">Per product</th><th class="num">Raw</th><th class="num">PSA 10</th><th class="num">Grade EV</th><th class="num">EV contribution</th></tr></thead>
+    <table><thead><tr><th>Card</th><th class="num">Pull rate ${hint("pullrate")}</th><th class="num">Per product ${hint("perproduct")}</th><th class="num">Raw ${hint("rawprice")}</th><th class="num">PSA 10 ${hint("psa10")}</th><th class="num">Grade EV ${hint("gradeev")}</th><th class="num">EV contribution ${hint("evcontrib")}</th></tr></thead>
     <tbody>${hitRows}</tbody></table>
   </div>`;
 }
@@ -729,14 +796,14 @@ function vEngine(){
     <div class="panel">
       <h3>Inputs</h3>
       <div class="field"><label>Product</label><select id="eng-prod">${opts}</select></div>
-      <div class="field"><label>Your buy-in (USD) — leave 0 for market price</label><input type="number" id="eng-buyin" value="0" min="0"></div>
-      <div class="field"><label>Selling fee haircut <span id="eng-fee-v" style="color:var(--text)">13%</span></label>
+      <div class="field"><label>Your buy-in (USD) — leave 0 for market price ${hint("buyin")}</label><input type="number" id="eng-buyin" value="0" min="0"></div>
+      <div class="field"><label>Selling fee haircut ${hint("sellfee")} <span id="eng-fee-v" style="color:var(--text)">13%</span></label>
         <div class="rangefield"><input type="range" id="eng-fee" min="0" max="25" value="13"><span style="font-family:var(--mono);font-size:12px;color:var(--muted)">%</span></div></div>
-      <div class="field"><label>Grading fee per card <span id="eng-gfee-v" style="color:var(--text)">$21</span></label>
+      <div class="field"><label>Grading fee per card ${hint("gradefee")} <span id="eng-gfee-v" style="color:var(--text)">$21</span></label>
         <div class="rangefield"><input type="range" id="eng-gfee" min="10" max="80" value="21"><span style="font-family:var(--mono);font-size:12px;color:var(--muted)">USD</span></div></div>
       <button class="btn foil" id="eng-run" style="width:100%">Run valuation</button>
     </div>
-    <div class="panel"><h3>Verdict</h3><div id="eng-out" class="empty">Run a valuation to see the dial.</div></div>
+    <div class="panel"><h3>Verdict ${hint("verdict")}</h3><div id="eng-out" class="empty">Run a valuation to see the dial.</div></div>
   </div>`;
 }
 function runEngine(){
@@ -770,12 +837,12 @@ function vGrading(){
   <div class="grid g-2">
     <div class="panel">
       <h3>Card inputs</h3>
-      <div class="field"><label>Raw price (USD)</label><input type="number" id="gr-raw" value="150"></div>
-      <div class="field"><label>PSA 10 price (USD)</label><input type="number" id="gr-psa10" value="320"></div>
-      <div class="field"><label>PSA 9 price — leave 0 for 75% of raw</label><input type="number" id="gr-psa9" value="0"></div>
-      <div class="field"><label>Gem rate (PSA 10 probability) <span id="gr-gem-v" style="color:var(--text)">55%</span></label>
+      <div class="field"><label>Raw price (USD) ${hint("rawprice")}</label><input type="number" id="gr-raw" value="150"></div>
+      <div class="field"><label>PSA 10 price (USD) ${hint("psa10")}</label><input type="number" id="gr-psa10" value="320"></div>
+      <div class="field"><label>PSA 9 price — leave 0 for 75% of raw ${hint("psa9")}</label><input type="number" id="gr-psa9" value="0"></div>
+      <div class="field"><label>Gem rate (PSA 10 probability) ${hint("gemrate")} <span id="gr-gem-v" style="color:var(--text)">55%</span></label>
         <div class="rangefield"><input type="range" id="gr-gem" min="5" max="95" value="55"><span style="font-family:var(--mono);font-size:12px;color:var(--muted)">%</span></div></div>
-      <div class="field"><label>Grading fee + shipping per card <span id="gr-fee-v" style="color:var(--text)">$25</span></label>
+      <div class="field"><label>Grading fee + shipping per card ${hint("gradefee")} <span id="gr-fee-v" style="color:var(--text)">$25</span></label>
         <div class="rangefield"><input type="range" id="gr-fee" min="10" max="120" value="25"><span style="font-family:var(--mono);font-size:12px;color:var(--muted)">USD</span></div></div>
       <button class="btn foil" id="gr-run" style="width:100%">Compute grading EV</button>
     </div>
@@ -795,7 +862,7 @@ function runGrading(){
   <div class="verdict-sub">
     Expected value graded: <b>${fmt2(ev)}</b> vs raw <b>${fmt2(raw)}</b><br>
     Edge per card: <b class="${cls(edge)}">${(edge>=0?"+":"\u2212")+fmt2(Math.abs(edge))}</b> (${pct(edge/raw*100)})<br>
-    Break-even gem rate: <b>${(Math.max(0,Math.min(1,be))*100).toFixed(0)}%</b> — you assume <b>${(gem*100).toFixed(0)}%</b>
+    Break-even gem rate: <b>${(Math.max(0,Math.min(1,be))*100).toFixed(0)}%</b> — you assume <b>${(gem*100).toFixed(0)}%</b> ${hint("breakeven")}
   </div>`;
 }
 
@@ -882,7 +949,7 @@ function vPortfolio(){
   <div class="grid g-3" style="margin-bottom:16px">
     <div class="panel stat"><div class="v">${fmt(Math.round(totVal))}</div><div class="lbl">Market value</div></div>
     <div class="panel stat"><div class="v">${fmt(Math.round(totCost))}</div><div class="lbl">Cost basis</div></div>
-    <div class="panel stat"><div class="v ${cls(totPL)}">${pct(totPL)}</div><div class="lbl">Unrealised P/L</div></div>
+    <div class="panel stat"><div class="v ${cls(totPL)}">${pct(totPL)}</div><div class="lbl">Unrealised P/L ${hint("pl")}</div></div>
   </div>
   <div class="panel" style="margin-bottom:16px">
     <h3>Add position</h3>
@@ -957,6 +1024,9 @@ function go(view, id){ currentView=view; detailId=id??detailId; render(); }
 
 /* ---------- Events (delegated) ---------- */
 document.addEventListener("click", e=>{
+  const qm = e.target.closest(".qm");
+  if(qm){ e.stopPropagation(); showHint(qm); return; }
+  if(!e.target.closest("#hintpop")) hideHint();
   const nav = e.target.closest(".navbtn"); if(nav){ go(nav.dataset.view, null); return; }
   const gt = e.target.closest("[data-goto]"); if(gt){ go(gt.dataset.goto); return; }
   const w = e.target.closest("[data-watch]"); if(w){ e.stopPropagation(); toggleWatch(w.dataset.watch); return; }
