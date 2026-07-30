@@ -507,6 +507,7 @@ async function tryLiveData(){
       if(p && row.market_price_usd){ p.base = row.market_price_usd; HIST[p.id] = history(p); }
     });
     document.getElementById("datasource").innerHTML = '<span class="dot"></span>Live feed · Cloudflare D1';
+    document.getElementById("datasource").nextElementSibling.textContent = "Nightly prices via GitHub Actions · Cloudflare D1";
     IDX = indexSeries();
     buildTicker();
     updateIndexPill();
