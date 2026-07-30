@@ -263,6 +263,15 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;heigh
 .hintpop .hp-b b{color:var(--text);font-weight:600}
 
 .empty{padding:40px 20px;text-align:center;color:var(--muted);line-height:1.8;font-size:13.5px}
+.badge.nodata{background:rgba(140,150,200,.1);color:var(--muted)}
+.src{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:5px;margin-left:6px;letter-spacing:.05em}
+.src.live{background:rgba(52,211,153,.12);color:var(--up)}
+.src.est{background:rgba(251,191,36,.12);color:var(--hold)}
+.desk-row{display:grid;grid-template-columns:1fr 130px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.desk-row:last-child{border-bottom:none}
+.desk-row input{background:rgba(11,14,26,.6);border:1px solid var(--line-strong);border-radius:9px;padding:8px 10px;font-family:var(--mono);font-size:13px;outline:none;width:100%}
+.desk-row input:focus{border-color:var(--grade)}
+.desk-note{font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:14px}
 .toast{
   position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);
   background:var(--panel-solid);border:1px solid var(--line-strong);border-radius:12px;
@@ -299,10 +308,11 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;heigh
     <div class="navsec">DESK</div>
     <button class="navbtn" data-view="watchlist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg><span>Watchlist</span></button>
     <button class="navbtn" data-view="portfolio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg><span>Portfolio</span></button>
+    <button class="navbtn" data-view="datadesk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg><span>Data desk</span></button>
     <button class="navbtn" data-view="news"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0V6"/><path d="M12 6h6M12 10h6M12 14h6M12 18h6"/></svg><span>News Wire</span></button>
     <div class="side-foot">
-      <div id="datasource"><span class="dot demo"></span>Demo data feed</div>
-      <div style="margin-top:6px">Prices are illustrative until your Cloudflare Worker is connected.</div>
+      <div id="datasource"><span class="dot demo"></span>Connecting…</div>
+      <div id="datasource-sub" style="margin-top:6px">Real recorded data only — nothing simulated.</div>
     </div>
   </aside>
 
@@ -330,18 +340,17 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;heigh
 <div class="hintpop" id="hintpop"></div>
 
 <script>
+
 /* ============================================================
-   TCGX — Break vs Hold Exchange
-   Single-file app. Set API_BASE to your Cloudflare Worker URL
-   to switch from demo data to live D1 data.
+   TCGX v2 — REAL DATA ONLY
+   No synthetic prices, no generated history, no fictional news.
+   Sources: your Cloudflare D1 (recorded observations),
+   TCGplayer market prices via pokemontcg.io (nightly Action),
+   PokéBeach RSS headlines (nightly Action).
+   Anything estimated is labelled "EST".
    ============================================================ */
 const API_BASE = "https://tcgx-api.kronborgnielsen.workers.dev";
 
-/* To enable login: Firebase console → create project → Authentication → enable
-   Google sign-in → Project settings → add a Web app → paste its config here:
-   const FIREBASE_CONFIG = { apiKey:"...", authDomain:"...", projectId:"...", appId:"..." };
-   Then add your GitHub Pages domain under Authentication → Settings → Authorized domains,
-   and create a Firestore database (production mode) with the rules from the setup notes. */
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyBY9bgvksoGoZzP10k22g1yWXcaIJwq5ps",
   authDomain: "tcgx-5591e.firebaseapp.com",
@@ -352,7 +361,7 @@ const FIREBASE_CONFIG = {
   measurementId: "G-TM7K6FJMT4"
 };
 
-/* ---------- Storage (safe wrapper: falls back to memory) ---------- */
+/* ---------- Storage ---------- */
 const store = (() => {
   let mem = {};
   const ok = (() => { try { localStorage.setItem("__t","1"); localStorage.removeItem("__t"); return true; } catch(e){ return false; } })();
@@ -363,11 +372,7 @@ const store = (() => {
   };
 })();
 
-/* ---------- Seeded RNG for stable demo price history ---------- */
-function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
-function hashStr(s){let h=0;for(let i=0;i<s.length;i++){h=(h<<5)-h+s.charCodeAt(i);h|=0}return Math.abs(h)}
-
-/* ---------- Demo dataset ---------- */
+/* ---------- Catalog (factual product identity only — no prices) ---------- */
 const SETS = [
   {id:"sv8pt5", name:"Prismatic Evolutions", game:"Pokémon", release:"2025-01-17"},
   {id:"sv8",    name:"Surging Sparks",       game:"Pokémon", release:"2024-11-08"},
@@ -379,176 +384,102 @@ const SETS = [
   {id:"op09",   name:"OP-09 Emperors in the New World", game:"One Piece", release:"2024-06-28"},
   {id:"eb01",   name:"EB-01 Memorial Collection", game:"One Piece", release:"2024-05-24"},
 ];
-
-/* Products: base = current market price (USD), yearAgo = price ~12m ago (for hold CAGR) */
 const PRODUCTS = [
-  {id:"sv8pt5-etb",  set:"sv8pt5", name:"Elite Trainer Box",        packs:9,   base:118,  yearAgo:75,  hot:true},
-  {id:"sv8pt5-bbdl", set:"sv8pt5", name:"Booster Bundle (6-pack)",  packs:6,   base:72,   yearAgo:41,  hot:true},
-  {id:"sv8pt5-case", set:"sv8pt5", name:"Booster Bundle Case (60 packs)", packs:60, base:690, yearAgo:410, hot:true},
-  {id:"sv8-bb",      set:"sv8",    name:"Booster Box (36 packs)",   packs:36,  base:168,  yearAgo:145},
-  {id:"sv8-case",    set:"sv8",    name:"Booster Box Case (6 boxes)",packs:216, base:960,  yearAgo:850},
-  {id:"sv3pt5-upc",  set:"sv3pt5", name:"Ultra Premium Collection", packs:16,  base:145,  yearAgo:120},
-  {id:"sv3pt5-bbdl", set:"sv3pt5", name:"Booster Bundle (6-pack)",  packs:6,   base:52,   yearAgo:38},
-  {id:"sv4a-box",    set:"sv4a",   name:"Booster Box (JP, 30 packs)",packs:30, base:55,   yearAgo:62,  hot:true},
-  {id:"sv4a-case",   set:"sv4a",   name:"Case (12 boxes, 360 packs)",packs:360, base:620,  yearAgo:700},
-  {id:"sv7a-box",    set:"sv7a",   name:"Booster Box (JP, 30 packs)",packs:30, base:92,   yearAgo:71},
-  {id:"swsh7-bb",    set:"swsh7",  name:"Booster Box (36 packs)",   packs:36,  base:1180, yearAgo:820, hot:true},
-  {id:"op05-bb",     set:"op05",   name:"Booster Box (24 packs)",   packs:24,  base:210,  yearAgo:160},
-  {id:"op05-case",   set:"op05",   name:"Case (12 boxes)",          packs:288, base:2350, yearAgo:1800},
-  {id:"op09-bb",     set:"op09",   name:"Booster Box (24 packs)",   packs:24,  base:96,   yearAgo:88},
-  {id:"eb01-bb",     set:"eb01",   name:"Booster Box (24 packs)",   packs:24,  base:132,  yearAgo:104},
+  {id:"sv8pt5-etb",  set:"sv8pt5", name:"Elite Trainer Box",              packs:9},
+  {id:"sv8pt5-bbdl", set:"sv8pt5", name:"Booster Bundle (6-pack)",        packs:6},
+  {id:"sv8pt5-case", set:"sv8pt5", name:"Booster Bundle Case (60 packs)", packs:60},
+  {id:"sv8-bb",      set:"sv8",    name:"Booster Box (36 packs)",         packs:36},
+  {id:"sv8-case",    set:"sv8",    name:"Booster Box Case (6 boxes)",     packs:216},
+  {id:"sv3pt5-upc",  set:"sv3pt5", name:"Ultra Premium Collection",       packs:16},
+  {id:"sv3pt5-bbdl", set:"sv3pt5", name:"Booster Bundle (6-pack)",        packs:6},
+  {id:"sv4a-box",    set:"sv4a",   name:"Booster Box (JP, 30 packs)",     packs:30},
+  {id:"sv4a-case",   set:"sv4a",   name:"Case (12 boxes, 360 packs)",     packs:360},
+  {id:"sv7a-box",    set:"sv7a",   name:"Booster Box (JP, 30 packs)",     packs:30},
+  {id:"swsh7-bb",    set:"swsh7",  name:"Booster Box (36 packs)",         packs:36},
+  {id:"op05-bb",     set:"op05",   name:"Booster Box (24 packs)",         packs:24},
+  {id:"op05-case",   set:"op05",   name:"Case (12 boxes)",                packs:288},
+  {id:"op09-bb",     set:"op09",   name:"Booster Box (24 packs)",         packs:24},
+  {id:"eb01-bb",     set:"eb01",   name:"Booster Box (24 packs)",         packs:24},
 ];
 
-/* Chase cards per set: rate = probability per pack, raw / psa10 in USD, gem = PSA10 rate */
+/* Chase-card model. rate = community-documented pull rate (no official rates exist).
+   est = fallback price estimate, used ONLY until a real price exists in D1
+   (from the nightly TCGplayer fetch or your Data desk) — and always labelled EST. */
 const CARDS = {
   sv8pt5:[
-    {name:"Umbreon ex 161 (SIR)",   rate:1/1530, raw:1450, psa10:2900, gem:.55},
-    {name:"Sylveon ex 156 (SIR)",   rate:1/1530, raw:520,  psa10:980,  gem:.55},
-    {name:"Espeon ex 155 (SIR)",    rate:1/1530, raw:340,  psa10:640,  gem:.55},
-    {name:"Leafeon ex 144 (SIR)",   rate:1/1530, raw:210,  psa10:420,  gem:.55},
-    {name:"Glaceon ex 150 (SIR)",   rate:1/1530, raw:230,  psa10:450,  gem:.55},
-    {name:"Eeveelution SIR (other)",rate:4/1530, raw:160,  psa10:330,  gem:.55},
-    {name:"Master Ball reverse (avg)",rate:1/32, raw:22,   psa10:70,   gem:.45},
-    {name:"Gold / Hyper rare (avg)",rate:1/180, raw:45,    psa10:110,  gem:.5},
-    {name:"Illustration rare (avg)",rate:1/6,   raw:12,    psa10:40,   gem:.45},
-    {name:"ex / double rare (avg)", rate:1/4,   raw:2.5,   psa10:14,   gem:.4},
-    {name:"ACE SPEC (avg)",         rate:1/20,  raw:8,     psa10:26,   gem:.4},
+    {name:"Umbreon ex 161 (SIR)",   rate:1/1530, est:1450, psa10:2900, gem:.55},
+    {name:"Sylveon ex 156 (SIR)",   rate:1/1530, est:520,  psa10:980,  gem:.55},
+    {name:"Espeon ex 155 (SIR)",    rate:1/1530, est:340,  psa10:640,  gem:.55},
+    {name:"Leafeon ex 144 (SIR)",   rate:1/1530, est:210,  psa10:420,  gem:.55},
+    {name:"Glaceon ex 150 (SIR)",   rate:1/1530, est:230,  psa10:450,  gem:.55},
+    {name:"Eeveelution SIR (other)",rate:4/1530, est:160,  psa10:330,  gem:.55},
+    {name:"Master Ball reverse (avg)",rate:1/32, est:22,   psa10:70,   gem:.45},
+    {name:"Gold / Hyper rare (avg)",rate:1/180, est:45,    psa10:110,  gem:.5},
+    {name:"Illustration rare (avg)",rate:1/6,   est:12,    psa10:40,   gem:.45},
+    {name:"ex / double rare (avg)", rate:1/4,   est:2.5,   psa10:14,   gem:.4},
+    {name:"ACE SPEC (avg)",         rate:1/20,  est:8,     psa10:26,   gem:.4},
   ],
   sv8:[
-    {name:"Pikachu ex 238 (SIR)",   rate:1/1400, raw:420, psa10:800, gem:.55},
-    {name:"Latias ex 239 (SIR)",    rate:1/1400, raw:210, psa10:410, gem:.55},
-    {name:"Milotic ex 237 (SIR)",   rate:1/1400, raw:160, psa10:330, gem:.55},
-    {name:"SIR (other, avg)",       rate:6/1400, raw:70,  psa10:150, gem:.5},
-    {name:"Illustration rare (avg)",rate:1/6,    raw:6,   psa10:26,  gem:.45},
-    {name:"ex / double rare (avg)", rate:1/4,    raw:2,   psa10:12,  gem:.4},
+    {name:"Pikachu ex 238 (SIR)",   rate:1/1400, est:420, psa10:800, gem:.55},
+    {name:"Latias ex 239 (SIR)",    rate:1/1400, est:210, psa10:410, gem:.55},
+    {name:"Milotic ex 237 (SIR)",   rate:1/1400, est:160, psa10:330, gem:.55},
+    {name:"SIR (other, avg)",       rate:6/1400, est:70,  psa10:150, gem:.5},
+    {name:"Illustration rare (avg)",rate:1/6,    est:6,   psa10:26,  gem:.45},
+    {name:"ex / double rare (avg)", rate:1/4,    est:2,   psa10:12,  gem:.4},
   ],
   sv3pt5:[
-    {name:"Charizard ex 199 (SIR)", rate:1/1300, raw:170, psa10:340, gem:.55},
-    {name:"Venusaur/Blastoise SIR", rate:2/1300, raw:75,  psa10:160, gem:.55},
-    {name:"SIR (other, avg)",       rate:5/1300, raw:45,  psa10:100, gem:.5},
-    {name:"Illustration rare (avg)",rate:1/6,    raw:7,   psa10:26,  gem:.45},
-    {name:"ex / double rare (avg)", rate:1/4,    raw:2.5, psa10:14,  gem:.4},
+    {name:"Charizard ex 199 (SIR)", rate:1/1300, est:170, psa10:340, gem:.55},
+    {name:"Venusaur/Blastoise SIR", rate:2/1300, est:75,  psa10:160, gem:.55},
+    {name:"SIR (other, avg)",       rate:5/1300, est:45,  psa10:100, gem:.5},
+    {name:"Illustration rare (avg)",rate:1/6,    est:7,   psa10:26,  gem:.45},
+    {name:"ex / double rare (avg)", rate:1/4,    est:2.5, psa10:14,  gem:.4},
   ],
   sv4a:[
-    {name:"Charizard ex SAR",       rate:1/600,  raw:95,  psa10:210, gem:.62},
-    {name:"Mew ex SAR",             rate:1/600,  raw:40,  psa10:95,  gem:.62},
-    {name:"SAR (other, avg)",       rate:8/600,  raw:32,  psa10:75,  gem:.6},
-    {name:"Shiny (S/SSR avg)",      rate:1/3.2,  raw:2.2, psa10:14,  gem:.55},
-    {name:"AR slot (avg)",          rate:1/2,    raw:1.2, psa10:11,  gem:.5},
+    {name:"Charizard ex SAR",       rate:1/600,  est:95,  psa10:210, gem:.62},
+    {name:"Mew ex SAR",             rate:1/600,  est:40,  psa10:95,  gem:.62},
+    {name:"SAR (other, avg)",       rate:8/600,  est:32,  psa10:75,  gem:.6},
+    {name:"Shiny (S/SSR avg)",      rate:1/3.2,  est:2.2, psa10:14,  gem:.55},
+    {name:"AR slot (avg)",          rate:1/2,    est:1.2, psa10:11,  gem:.5},
   ],
   sv7a:[
-    {name:"Eevee ex SAR",           rate:1/650,  raw:120, psa10:260, gem:.62},
-    {name:"Sylveon ex SAR",         rate:1/650,  raw:90,  psa10:200, gem:.62},
-    {name:"SAR (other, avg)",       rate:9/650,  raw:25,  psa10:60,  gem:.6},
-    {name:"AR / chase reverse (avg)",rate:1/4,   raw:1.8, psa10:15,  gem:.55},
+    {name:"Eevee ex SAR",           rate:1/650,  est:120, psa10:260, gem:.62},
+    {name:"Sylveon ex SAR",         rate:1/650,  est:90,  psa10:200, gem:.62},
+    {name:"SAR (other, avg)",       rate:9/650,  est:25,  psa10:60,  gem:.6},
+    {name:"AR / chase reverse (avg)",rate:1/4,   est:1.8, psa10:15,  gem:.55},
   ],
   swsh7:[
-    {name:"Umbreon VMAX (Moonbreon)",rate:1/1450, raw:1350, psa10:2600, gem:.5},
-    {name:"Rayquaza VMAX alt",      rate:1/1450, raw:600,  psa10:1150, gem:.5},
-    {name:"Sylveon VMAX alt",       rate:1/1450, raw:480,  psa10:900,  gem:.5},
-    {name:"Alt art (other, avg)",   rate:6/1450, raw:150,  psa10:320,  gem:.5},
-    {name:"V / VMAX (avg)",         rate:1/6,    raw:4,    psa10:22,   gem:.45},
+    {name:"Umbreon VMAX (Moonbreon)",rate:1/1450, est:1350, psa10:2600, gem:.5},
+    {name:"Rayquaza VMAX alt",      rate:1/1450, est:600,  psa10:1150, gem:.5},
+    {name:"Sylveon VMAX alt",       rate:1/1450, est:480,  psa10:900,  gem:.5},
+    {name:"Alt art (other, avg)",   rate:6/1450, est:150,  psa10:320,  gem:.5},
+    {name:"V / VMAX (avg)",         rate:1/6,    est:4,    psa10:22,   gem:.45},
   ],
   op05:[
-    {name:"Monkey.D.Luffy 119 (Manga)",rate:1/2100, raw:820, psa10:1500, gem:.6},
-    {name:"Sabo alt art",           rate:1/700,  raw:120, psa10:250, gem:.6},
-    {name:"SEC / alt (avg)",        rate:5/700,  raw:45,  psa10:110, gem:.58},
-    {name:"SR (avg)",               rate:1/4,    raw:2.5, psa10:16,  gem:.5},
+    {name:"Monkey.D.Luffy 119 (Manga)",rate:1/2100, est:820, psa10:1500, gem:.6},
+    {name:"Sabo alt art",           rate:1/700,  est:120, psa10:250, gem:.6},
+    {name:"SEC / alt (avg)",        rate:5/700,  est:45,  psa10:110, gem:.58},
+    {name:"SR (avg)",               rate:1/4,    est:2.5, psa10:16,  gem:.5},
   ],
   op09:[
-    {name:"Shanks manga rare",      rate:1/2000, raw:380, psa10:760, gem:.6},
-    {name:"SEC / alt (avg)",        rate:5/700,  raw:30,  psa10:80,  gem:.58},
-    {name:"SR (avg)",               rate:1/4,    raw:1.8, psa10:14,  gem:.5},
+    {name:"Shanks manga rare",      rate:1/2000, est:380, psa10:760, gem:.6},
+    {name:"SEC / alt (avg)",        rate:5/700,  est:30,  psa10:80,  gem:.58},
+    {name:"SR (avg)",               rate:1/4,    est:1.8, psa10:14,  gem:.5},
   ],
   eb01:[
-    {name:"Shanks 004 alt (Manga)", rate:1/1800, raw:450, psa10:900, gem:.6},
-    {name:"SP card (avg)",          rate:1/24,   raw:18,  psa10:55,  gem:.55},
-    {name:"SR (avg)",               rate:1/4,    raw:2.2, psa10:15,  gem:.5},
+    {name:"Shanks 004 alt (Manga)", rate:1/1800, est:450, psa10:900, gem:.6},
+    {name:"SP card (avg)",          rate:1/24,   est:18,  psa10:55,  gem:.55},
+    {name:"SR (avg)",               rate:1/4,    est:2.2, psa10:15,  gem:.5},
   ],
 };
-const FILLER_PER_PACK = 0.35;      // bulk value per pack (USD)
-const SELL_FEES = 0.13;            // marketplace + shipping haircut on singles
-const GRADE_FEE = 21;              // PSA bulk/value tier per card
+const FILLER_PER_PACK = 0.35;
+const SELL_FEES = 0.13;
+const GRADE_FEE = 21;
 
-/* ---------- Price history (90 days, seeded) ---------- */
-function history(p, days=90){
-  const rnd = mulberry32(hashStr(p.id));
-  const drift = Math.pow(p.base / p.yearAgo, 1/365) - 1;
-  let v = p.base / Math.pow(1+drift, days);
-  const out = [];
-  const today = new Date();
-  for(let i=days;i>=0;i--){
-    const d = new Date(today); d.setDate(d.getDate()-i);
-    v = v * (1 + drift + (rnd()-.5)*0.028);
-    out.push({d: d.toISOString().slice(0,10), v: +v.toFixed(2)});
-  }
-  out[out.length-1].v = p.base;
-  return out;
-}
-const HIST = {}; PRODUCTS.forEach(p => HIST[p.id] = history(p));
 const setOf = id => SETS.find(s=>s.id===id);
 const prodOf = id => PRODUCTS.find(p=>p.id===id);
-const price = p => HIST[p.id][HIST[p.id].length-1].v;
-const chgPct = (p, days) => { const h=HIST[p.id]; const a=h[h.length-1-days].v, b=h[h.length-1].v; return (b/a-1)*100; };
 
-/* ---------- Sitewide game filter (All / Pokémon / One Piece) ---------- */
-let gameFilter = store.get("tcgx.game","All");
-const filtered = () => gameFilter==="All" ? PRODUCTS : PRODUCTS.filter(p => setOf(p.set).game === gameFilter);
-
-/* ---------- Valuation engine ---------- */
-function evPerPack(setId){
-  return (CARDS[setId]||[]).reduce((s,c)=>s + c.rate*c.raw, 0) + FILLER_PER_PACK;
-}
-function gradeUpliftPerPack(setId){
-  // extra EV if every graded-worthy hit (raw >= 100) is graded instead of sold raw
-  return (CARDS[setId]||[]).reduce((s,c)=>{
-    if(c.raw < 100) return s;
-    const gradeEV = c.gem*c.psa10 + (1-c.gem)*c.raw*0.75 - GRADE_FEE;
-    return s + c.rate * Math.max(0, gradeEV - c.raw);
-  },0);
-}
-function valuation(p){
-  const mkt = price(p);
-  const rawBreak = evPerPack(p.set) * p.packs;
-  const netBreak = rawBreak * (1-SELL_FEES);
-  const gradedBreak = (evPerPack(p.set) + gradeUpliftPerPack(p.set)) * p.packs * (1-SELL_FEES);
-  const cagr = (Math.pow(p.base/p.yearAgo, 1) - 1) * 100; // 12m appreciation
-  const breakROI = (netBreak/mkt - 1) * 100;
-  const gradeROI = (gradedBreak/mkt - 1) * 100;
-  let verdict = "HOLD";
-  if(gradeROI > 12 && gradeROI > breakROI + 5) verdict = "GRADE";
-  else if(breakROI > 8) verdict = "BREAK";
-  else if(cagr < 2 && breakROI > 0) verdict = "BREAK";
-  return {mkt, rawBreak, netBreak, gradedBreak, cagr, breakROI, gradeROI, verdict};
-}
-function heat(p){ // momentum score 0-100
-  const m7=chgPct(p,7), m30=chgPct(p,30);
-  return Math.max(0, Math.min(100, Math.round(50 + m7*4 + m30*1.2)));
-}
-
-/* ---------- Index ---------- */
-function indexSeries(list){
-  const L = (list && list.length) ? list : PRODUCTS;
-  const days = HIST[L[0].id].length;
-  const out=[];
-  for(let i=0;i<days;i++){
-    let sum=0; L.forEach(p=>{ sum += HIST[p.id][i].v / HIST[p.id][0].v; });
-    out.push({d: HIST[L[0].id][i].d, v: +(100*sum/L.length).toFixed(2)});
-  }
-  return out;
-}
-let IDX = indexSeries(filtered());
-
-/* ---------- Demo news wire ---------- */
-const NEWS = [
-  {t:"Prismatic Evolutions restock wave sells through in hours — sealed premiums widen", ago:"2h", tags:["Pokémon","Sealed","Restock"], b:"Major retailers listed Elite Trainer Boxes at MSRP this morning; aftermarket asks moved up ~4% within the day as allocations cleared. Break EV remains below market on ETBs — the premium is collector-driven, not pull-driven."},
-  {t:"PSA turnaround times drop to 12 business days on value tier", ago:"6h", tags:["Grading","PSA"], b:"Faster turnaround lowers the effective carrying cost of grading submissions. The Grading Lab default fee assumption is unchanged, but time-to-cash improves for BREAK+GRADE strategies."},
-  {t:"Shiny Treasure ex (sv4a) reprint allocation confirmed for EU distributors", ago:"1d", tags:["Pokémon","Japan","Supply"], b:"Fresh supply typically compresses box prices 5–10% short-term while singles hold. Watch the sv4a Break ROI — reprints historically flip JP boxes from HOLD to BREAK."},
-  {t:"One Piece OP-05 case values hit new 12-month high", ago:"1d", tags:["One Piece","Sealed"], b:"Manga Luffy demand continues to carry the set. Case CAGR now outpaces break value growth — the engine keeps OP-05 in HOLD territory."},
-  {t:"Evolving Skies: raw Moonbreon prices firm ahead of anniversary", ago:"2d", tags:["Pokémon","Singles"], b:"Alt-art eeveelutions remain the deepest liquidity pool in modern Pokémon. Booster box EV is dominated by three cards — variance per box is extreme; case-level breaking recommended."},
-  {t:"Cardmarket fee update: private seller commission unchanged for 2026", ago:"3d", tags:["Marketplaces","Fees"], b:"The default 13% net-of-fees haircut in the valuation engine remains a reasonable EU assumption. US-only sellers on eBay should model 14–15% with shipping."},
-  {t:"Terastal Festival (JP) singles index up 9% month-over-month", ago:"4d", tags:["Pokémon","Japan"], b:"Eevee ex SAR leads. JP high-rarity gem rates (~60%+) keep GRADE verdicts more common on Japanese product than English."},
-];
+/* ---------- Live data state (the ONLY source of prices/history/news) ---------- */
+let LIVE = { ok:false, err:null, prices:{}, hist:{}, cards:{}, news:[] };
 
 function agoStr(d){
   if(!d) return "";
@@ -560,56 +491,128 @@ function agoStr(d){
   return Math.round(m/1440)+"d";
 }
 
-/* ---------- Live-data hook (Cloudflare Worker) ---------- */
-async function tryLiveData(){
-  if(!API_BASE) return;
+async function loadLive(){
+  LIVE = { ok:false, err:null, prices:{}, hist:{}, cards:{}, news:[] };
   try{
-    const r = await fetch(API_BASE + "/api/products");
-    if(!r.ok) throw 0;
-    const live = await r.json();
-    live.forEach(row=>{
-      const p = prodOf(row.id);
-      if(p && row.market_price_usd){ p.base = row.market_price_usd; HIST[p.id] = history(p); }
+    const r = await fetch(API_BASE + "/api/bootstrap");
+    if(!r.ok) throw new Error("API " + r.status);
+    const d = await r.json();
+    (d.products||[]).forEach(x=>{ if(x.market_price_usd!=null) LIVE.prices[x.id] = {v:+x.market_price_usd, at:x.recorded_at}; });
+    Object.entries(d.history||{}).forEach(([id,rows])=>{
+      LIVE.hist[id] = rows.map(x=>({d:String(x.d).slice(0,10), v:+x.v}));
     });
-    document.getElementById("datasource").innerHTML = '<span class="dot"></span>Live feed · Cloudflare D1';
-    document.getElementById("datasource").nextElementSibling.textContent = "Nightly prices via GitHub Actions · Cloudflare D1";
-    try{
-      const nr = await fetch(API_BASE + "/api/news");
-      if(nr.ok){
-        const rows = await nr.json();
-        if(Array.isArray(rows) && rows.length >= 3){
-          NEWS.length = 0;
-          rows.forEach(n=>NEWS.push({t:n.title, b:n.body||"", tags:(n.tags||"").split(",").map(x=>x.trim()).filter(Boolean), ago:agoStr(n.published_at)}));
-        }
-      }
-    }catch(e){ /* keep demo headlines */ }
-    IDX = indexSeries(filtered());
-    buildTicker();
-    updateIndexPill();
-    render();
-  }catch(e){ /* stay on demo data */ }
+    (d.cards||[]).forEach(c=>{
+      LIVE.cards[c.set_id+"|"+c.name] = { v: c.live_price!=null? +c.live_price : null, at: c.price_at||null };
+    });
+    LIVE.news = (d.news||[]).map(n=>({t:n.title, b:n.body||"", u:n.url||"", tags:(n.tags||"").split(",").map(s=>s.trim()).filter(Boolean), ago:agoStr(n.published_at)}));
+    LIVE.ok = true;
+  }catch(e){ LIVE.err = e.message || "unreachable"; }
+  updateSourceBadge();
+  updateIndexPill();
+  buildTicker();
+  render();
+}
+function updateSourceBadge(){
+  const el = document.getElementById("datasource");
+  const sub = document.getElementById("datasource-sub");
+  if(!LIVE.ok){
+    el.innerHTML = '<span class="dot demo"></span>API unreachable';
+    sub.textContent = "No live data — nothing is being simulated in its place.";
+  } else if(Object.keys(LIVE.prices).length === 0){
+    el.innerHTML = '<span class="dot demo"></span>Connected · no sealed prices yet';
+    sub.textContent = "Enter observed prices in the Data desk to start real tracking.";
+  } else {
+    el.innerHTML = '<span class="dot"></span>Live · Cloudflare D1';
+    sub.textContent = "Real recorded data only. EST = estimate awaiting a real price.";
+  }
 }
 
-/* ---------- Login & cloud profile (optional, Firebase) ---------- */
+/* ---------- Real-data accessors (null = honestly unknown) ---------- */
+const price = p => LIVE.prices[p.id] ? LIVE.prices[p.id].v : null;
+const histOf = id => LIVE.hist[id] || [];
+function chgPct(p, days){
+  const h = histOf(p.id);
+  if(h.length < 2) return null;
+  const now = h[h.length-1];
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-days);
+  const cut = cutoff.toISOString().slice(0,10);
+  const past = [...h].reverse().find(x=>x.d <= cut);
+  if(!past || past.v===0) return null;
+  return (now.v/past.v - 1)*100;
+}
+function cardVal(setId, c){
+  const live = LIVE.cards[setId+"|"+c.name];
+  if(live && live.v!=null) return {v:live.v, live:true, at:live.at};
+  return {v:c.est, live:false, at:null};
+}
+function setHasEst(setId){ return (CARDS[setId]||[]).some(c=>!cardVal(setId,c).live); }
+
+/* ---------- Valuation (EV real where prices are real; EST labelled) ---------- */
+function evPerPack(setId){
+  return (CARDS[setId]||[]).reduce((s,c)=>s + c.rate*cardVal(setId,c).v, 0) + FILLER_PER_PACK;
+}
+function gradeUpliftPerPack(setId, gfee=GRADE_FEE){
+  return (CARDS[setId]||[]).reduce((s,c)=>{
+    const raw = cardVal(setId,c).v;
+    if(raw < 100 || !c.psa10) return s;
+    const gradeEV = c.gem*c.psa10 + (1-c.gem)*raw*0.75 - gfee;
+    return s + c.rate * Math.max(0, gradeEV - raw);
+  },0);
+}
+function valuation(p){
+  const mkt = price(p);
+  const rawBreak = evPerPack(p.set) * p.packs;
+  const netBreak = rawBreak * (1-SELL_FEES);
+  const gradedBreak = (evPerPack(p.set) + gradeUpliftPerPack(p.set)) * p.packs * (1-SELL_FEES);
+  const c365 = chgPct(p, 365);
+  if(mkt == null){
+    return {mkt:null, rawBreak, netBreak, gradedBreak, cagr:c365, breakROI:null, gradeROI:null, verdict:"NO DATA", est:setHasEst(p.set)};
+  }
+  const breakROI = (netBreak/mkt - 1) * 100;
+  const gradeROI = (gradedBreak/mkt - 1) * 100;
+  let verdict = "HOLD";
+  if(gradeROI > 12 && gradeROI > breakROI + 5) verdict = "GRADE";
+  else if(breakROI > 8) verdict = "BREAK";
+  return {mkt, rawBreak, netBreak, gradedBreak, cagr:c365, breakROI, gradeROI, verdict, est:setHasEst(p.set)};
+}
+function heat(p){
+  const m7 = chgPct(p,7), m30 = chgPct(p,30);
+  if(m7==null && m30==null) return null;
+  return Math.max(0, Math.min(100, Math.round(50 + (m7||0)*4 + (m30||0)*1.2)));
+}
+
+/* ---------- Sitewide game filter ---------- */
+let gameFilter = store.get("tcgx.game","All");
+const filtered = () => gameFilter==="All" ? PRODUCTS : PRODUCTS.filter(p => setOf(p.set).game === gameFilter);
+
+/* ---------- Index from real history only ---------- */
+function indexSeries(list){
+  const L = (list && list.length ? list : PRODUCTS).filter(p=>histOf(p.id).length>=2);
+  if(L.length===0) return [];
+  const dates = [...new Set(L.flatMap(p=>histOf(p.id).map(x=>x.d)))].sort();
+  if(dates.length<2) return [];
+  return dates.map(d=>{
+    let sum=0, n=0;
+    L.forEach(p=>{
+      const h = histOf(p.id);
+      const pt = [...h].reverse().find(x=>x.d<=d);
+      if(pt && h[0].v>0){ sum += pt.v/h[0].v; n++; }
+    });
+    return {d, v: n? +(100*sum/n).toFixed(2) : 100};
+  });
+}
+let IDX = [];
+
+/* ---------- Login & cloud profile (Firebase) ---------- */
 let fbUser = null, fbDb = null;
 function initAuth(){
   const btn = document.getElementById("acctbtn");
-  if(!FIREBASE_CONFIG){
-    btn.onclick = () => toast("Login isn't set up yet — paste your Firebase config into FIREBASE_CONFIG in index.html");
-    return;
-  }
-  if(typeof firebase === "undefined"){
-    btn.onclick = () => toast("Firebase scripts didn't load — check your internet / ad-blocker and refresh");
-    return;
-  }
+  if(!FIREBASE_CONFIG){ btn.onclick = () => toast("Login isn't set up — see FIREBASE_CONFIG in index.html"); return; }
+  if(typeof firebase === "undefined"){ btn.onclick = () => toast("Firebase scripts didn't load — check ad-blocker and refresh"); return; }
   try{
     firebase.initializeApp(FIREBASE_CONFIG);
     fbDb = firebase.firestore();
-  }catch(e){
-    btn.onclick = () => toast("Firebase config error: " + e.message);
-    console.error("TCGX auth init:", e);
-    return;
-  }
+  }catch(e){ btn.onclick = () => toast("Firebase config error: " + e.message); console.error(e); return; }
   firebase.auth().getRedirectResult().catch(e=>toast("Sign-in: " + e.message));
   firebase.auth().onAuthStateChanged(async u=>{
     fbUser = u;
@@ -621,14 +624,10 @@ function initAuth(){
     toast("Opening Google sign-in…");
     const prov = new firebase.auth.GoogleAuthProvider();
     firebase.auth().signInWithPopup(prov).catch(e=>{
-      console.error("TCGX sign-in:", e);
-      const popupIssue = e && ["auth/popup-blocked","auth/cancelled-popup-request",
-        "auth/operation-not-supported-in-this-environment"].includes(e.code);
-      if(popupIssue){
-        firebase.auth().signInWithRedirect(prov).catch(err=>toast("Sign-in failed: " + err.message));
-      } else if(e.code !== "auth/popup-closed-by-user"){
-        toast("Sign-in failed: " + (e.message||e.code));
-      }
+      console.error("sign-in:", e);
+      const popupIssue = e && ["auth/popup-blocked","auth/cancelled-popup-request","auth/operation-not-supported-in-this-environment"].includes(e.code);
+      if(popupIssue) firebase.auth().signInWithRedirect(prov).catch(err=>toast("Sign-in failed: " + err.message));
+      else if(e.code !== "auth/popup-closed-by-user") toast("Sign-in failed: " + (e.message||e.code));
     });
   };
 }
@@ -652,42 +651,42 @@ function cloudSave(){
   }).catch(()=>{});
 }
 
-/* ============================================================
-   UI
-   ============================================================ */
+/* ============================================================ UI ============================================================ */
 const $ = s => document.querySelector(s);
 const viewEl = $("#view");
-const fmt = n => "$" + n.toLocaleString("en-US",{maximumFractionDigits:0});
-const fmt2 = n => "$" + n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
-const pct = n => (n>=0?"+":"") + n.toFixed(1) + "%";
-const cls = n => n>=0 ? "pos" : "neg";
+const fmt = n => n==null ? "—" : "$" + n.toLocaleString("en-US",{maximumFractionDigits:0});
+const fmt2 = n => n==null ? "—" : "$" + n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+const pct = n => n==null ? "—" : (n>=0?"+":"") + n.toFixed(1) + "%";
+const cls = n => n==null ? "" : (n>=0 ? "pos" : "neg");
+const vBadge = v => `<span class="badge ${v==="NO DATA"?"nodata":v.toLowerCase()}">${v}</span>`;
+const estTag = on => on ? '<span class="src est">EST</span>' : '';
 
-/* ---------- Plain-language help ---------- */
 const HINTS = {
-  index:{t:"TCGX Sealed Index",b:"An average of all tracked products' prices, scaled so that 90 days ago = 100. A reading of 106 means the sealed market is up ~6% over the period. Think of it as the S&P 500, but for cardboard."},
+  index:{t:"TCGX Sealed Index",b:"An average of the tracked products' <b>recorded</b> prices, scaled so the first recorded day = 100. It only exists once real price history has been saved — no history is ever simulated."},
   breakzone:{t:"BREAK zone",b:"How many products are currently worth <b>more opened than sealed</b> — the cards you'd statistically pull are worth more than the box costs, even after selling fees."},
-  breakroi:{t:"Break ROI",b:"Your expected profit if you buy at this price, open everything, and sell all the cards. <b>+10%</b> means $100 in returns about $110 after fees — <b>on average, over many boxes</b>. Any single box can land far above or below; the average only shows up with volume."},
-  breakvalue:{t:"Break value (net)",b:"The total worth of the cards statistically inside this product: every card's price × its pull rate, summed up, minus selling fees. It's what opening the product is 'worth' on average."},
-  heat:{t:"Heat",b:"A 0–100 momentum score based on the last 7 and 30 days of price movement. <b>50</b> = flat, higher = climbing fast right now, lower = falling."},
-  verdict:{t:"The verdict",b:"<b>BREAK</b> = opening it beats the sealed price — the contents are worth more than the box. <b>HOLD</b> = the sealed product costs more than its contents; keep it closed and let it appreciate. <b>GRADE</b> = opening it AND grading the big hits is the best play."},
-  market:{t:"Market price",b:"The current going rate to buy this sealed product."},
-  besthold:{t:"12-month hold",b:"How much this sealed product's price rose over the last 12 months if you simply left it on the shelf. Sealed product often appreciates because supply only shrinks — every opened box is one fewer in the world."},
-  cagr:{t:"Sealed 12m trend",b:"How much the sealed price changed over the last 12 months. If this beats the break ROI, keeping it closed has been the better trade."},
-  gradedbreak:{t:"Break + grade",b:"Expected result if you open the product AND send the big hits (cards worth $100+) to PSA for grading instead of selling them raw. Only shown when grading actually adds value."},
-  evpack:{t:"Expected value per pack",b:"What one pack is worth <b>on average</b>: each possible hit's price × its odds, plus a little bulk value. Most individual packs are worth less than this and rare packs are worth much more — it evens out over volume."},
-  pullrate:{t:"Pull rate",b:"The odds of one pack containing this card. <b>1 : 1,530</b> means on average one copy shows up per 1,530 packs opened."},
-  perproduct:{t:"Per product",b:"The expected number of copies inside this whole product. <b>23.5%</b> ≈ one copy in every four such products; <b>2.0×</b> ≈ about two copies per product."},
-  rawprice:{t:"Raw price",b:"What the card sells for ungraded, straight out of the pack."},
-  psa10:{t:"PSA 10 price",b:"What the card sells for with a perfect grade of 10 from PSA. Grading = sending the card to a company that authenticates it, scores its condition 1–10, and seals it in a protective case. A 10 can multiply a card's value."},
-  gradeev:{t:"Grade EV",b:"What sending this card to PSA is worth on average: your gem-rate chance of getting the PSA 10 price, otherwise a lower-grade price, minus the grading fee. <b>Green</b> = grading beats selling raw. Only computed for $100+ cards."},
-  evcontrib:{t:"EV contribution",b:"How much of the product's total break value comes from this one card (pull rate × price × pack count). Shows which cards actually carry the box — often it's just two or three."},
-  buyin:{t:"Your buy-in",b:"What <b>you</b> actually pay. The verdicts elsewhere assume market price, but a good deal changes everything — buying 20% under market can flip a HOLD into a BREAK. Leave at 0 to use the market price."},
-  sellfee:{t:"Selling fee haircut",b:"The slice you lose when selling the pulled cards. It bundles marketplace commission (eBay/Cardmarket take roughly 10–13%), payment processing, shipping and supplies. At <b>13%</b>, a $100 card puts about <b>$87</b> in your pocket. Selling locally with no fees? Slide it down and watch the ROI improve."},
-  gradefee:{t:"Grading fee",b:"What PSA charges per card, plus shipping to and from them. Cheapest tiers run roughly $15–25 per card. A card must gain more than this from the grade for the submission to pay off."},
-  gemrate:{t:"Gem rate",b:"The probability a card comes back <b>PSA 10</b> ('gem mint'). It depends on print quality and how well you pre-screen centering and surface. Japanese cards often gem at 60%+, English modern closer to 45–55%."},
-  psa9:{t:"PSA 9 price",b:"What the card sells for if it grades a 9 instead of a 10 — your consolation prize. Leave at 0 and we assume 75% of the raw price, a common pattern for modern cards."},
-  breakeven:{t:"Break-even gem rate",b:"The minimum PSA 10 probability at which grading stops losing money. If your realistic gem rate is <b>above</b> this number, grade the card; if below, sell it raw."},
-  pl:{t:"Unrealised P/L",b:"Paper profit: what your positions are worth at today's prices versus what you paid. 'Unrealised' because it only becomes real money when you actually sell — and selling fees will take their cut then."},
+  breakroi:{t:"Break ROI",b:"Your expected profit if you buy at this price, open everything, and sell all the cards. <b>+10%</b> means $100 in returns about $110 after fees — <b>on average, over many boxes</b>. Any single box can land far above or below."},
+  breakvalue:{t:"Break value (net)",b:"The total worth of the cards statistically inside: card price × pull rate, summed, minus selling fees. An <b>EST</b> tag means at least one card price is still an estimate rather than a recorded market price."},
+  heat:{t:"Heat",b:"A 0–100 momentum score from the last 7/30 days of <b>recorded</b> price movement. Shows — until enough real history exists."},
+  verdict:{t:"The verdict",b:"<b>BREAK</b> = opening beats the sealed price. <b>HOLD</b> = the sealed product costs more than its contents. <b>GRADE</b> = opening AND grading the big hits is the best play. <b>NO DATA</b> = no real sealed price recorded yet."},
+  market:{t:"Market price",b:"The latest <b>recorded</b> price in your database — from the nightly data job or the Data desk. Never invented."},
+  besthold:{t:"12-month hold",b:"Sealed price change over 12 months of recorded history. Shows — until a year of real data exists."},
+  cagr:{t:"Sealed 12m trend",b:"Recorded sealed price change over the last 12 months. Needs a year of real history — shows — until then."},
+  gradedbreak:{t:"Break + grade",b:"Expected result if you open the product AND grade the big hits ($100+ cards) at PSA instead of selling raw."},
+  evpack:{t:"Expected value per pack",b:"What one pack is worth on average: each hit's price × its odds, plus bulk. Cards marked EST still use estimates — the number firms up as real prices arrive."},
+  pullrate:{t:"Pull rate",b:"The odds of one pack containing this card — <b>community-documented averages</b> from large opening samples. The Pokémon Company publishes no official rates, so these are the best available data, not exact truths."},
+  perproduct:{t:"Per product",b:"Expected copies in this whole product. <b>23.5%</b> ≈ one copy per four products; <b>2.0×</b> ≈ about two per product."},
+  rawprice:{t:"Raw price",b:"The card's price ungraded. <b>LIVE</b> = real TCGplayer market price or your recorded observation. <b>EST</b> = placeholder estimate awaiting real data."},
+  psa10:{t:"PSA 10 price",b:"The card's price with a perfect grade of 10 from PSA (grading = authentication + 1–10 condition score, sealed in a case). Currently estimates — update real ones in the Data desk."},
+  gradeev:{t:"Grade EV",b:"What grading this card is worth on average: gem-rate chance of the PSA 10 price, otherwise a lower grade, minus the fee. Green = grading beats selling raw."},
+  evcontrib:{t:"EV contribution",b:"How much of the product's break value comes from this one card. Often two or three cards carry the whole box."},
+  buyin:{t:"Your buy-in",b:"What <b>you</b> actually pay. A deal 20% under market can flip a HOLD into a BREAK. Leave 0 to use the recorded market price."},
+  sellfee:{t:"Selling fee haircut",b:"The slice lost when selling pulled cards: marketplace commission (eBay/Cardmarket ~10–13%), payment fees, shipping, supplies. At <b>13%</b>, a $100 card nets about <b>$87</b>."},
+  gradefee:{t:"Grading fee",b:"PSA's per-card charge plus shipping — cheapest tiers roughly $15–25. The grade must add more than this to pay off."},
+  gemrate:{t:"Gem rate",b:"The probability of a <b>PSA 10</b>. Depends on print quality and pre-screening. Japanese cards often gem 60%+, English modern ~45–55%. This is your assumption to set."},
+  psa9:{t:"PSA 9 price",b:"The price at a 9 instead of a 10. Leave 0 to assume 75% of raw — a common modern-card pattern."},
+  breakeven:{t:"Break-even gem rate",b:"The minimum PSA 10 probability where grading stops losing money. Above it: grade. Below it: sell raw."},
+  pl:{t:"Unrealised P/L",b:"Paper profit at the latest recorded prices vs what you paid. Real money only when you sell — minus fees."},
+  datadesk:{t:"Data desk",b:"Where real observations enter the system. Prices you save are written to your database with a timestamp and become the site's live values and permanent history. Saving requires your admin key — visitors can look, only you can write."},
 };
 const hint = k => `<button class="qm" data-hint="${k}" aria-label="What does this mean?">?</button>`;
 const hintEl = () => document.getElementById("hintpop");
@@ -708,39 +707,46 @@ function showHint(btn){
 }
 function hideHint(){ hintEl().classList.remove("open"); }
 window.addEventListener("scroll", hideHint, {passive:true});
+
 let currentView = "dashboard";
 let detailId = null;
 let charts = [];
+let adminKey = "";
 
 function toast(msg){
   const t=$("#toast"); t.textContent=msg; t.classList.add("show");
-  clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"), 2400);
+  clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"), 2600);
 }
 function killCharts(){ charts.forEach(c=>c.destroy()); charts=[]; }
 
 function sparkline(p){
-  const h = HIST[p.id].slice(-30).map(x=>x.v);
+  const h = histOf(p.id).slice(-30).map(x=>x.v);
+  if(h.length < 2) return '<span class="prodmeta">—</span>';
   const min=Math.min(...h), max=Math.max(...h), rng=(max-min)||1;
   const pts = h.map((v,i)=>`${(i/(h.length-1)*110).toFixed(1)},${(28-(v-min)/rng*24+1).toFixed(1)}`).join(" ");
   const up = h[h.length-1]>=h[0];
   return `<svg class="spark" viewBox="0 0 110 30" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="${up?'#34d399':'#fb7185'}" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
 }
 
-/* ---------- Ticker ---------- */
 function buildTicker(){
-  const items = filtered().map(p=>{
+  const withPrice = filtered().filter(p=>price(p)!=null);
+  if(!withPrice.length){
+    $("#ticker").innerHTML = '<span class="tk"><span class="sym">TCGX</span><span>Awaiting first recorded prices — add them in the Data desk</span></span>'.repeat(4);
+    return;
+  }
+  const items = withPrice.map(p=>{
     const c = chgPct(p,1);
     const sym = p.id.toUpperCase().replace(/-/g,".");
-    return `<span class="tk"><span class="sym">${sym}</span><span>${fmt(price(p))}</span><span class="${c>=0?'u':'d'}">${pct(c)}</span></span>`;
+    const chg = c==null ? '' : `<span class="${c>=0?'u':'d'}">${pct(c)}</span>`;
+    return `<span class="tk"><span class="sym">${sym}</span><span>${fmt(price(p))}</span>${chg}</span>`;
   }).join("");
-  $("#ticker").innerHTML = items + items; // duplicate for seamless loop
+  $("#ticker").innerHTML = items + items;
 }
 
-/* ---------- Verdict dial ---------- */
 function dialHTML(v){
-  // needle angle: breakROI mapped -30%..+30% → -80°..+80°
-  const ang = Math.max(-80, Math.min(80, v.breakROI/30*80));
-  const color = v.verdict==="BREAK" ? "var(--up)" : v.verdict==="GRADE" ? "var(--grade)" : "var(--hold)";
+  const roi = v.breakROI==null ? 0 : v.breakROI;
+  const ang = Math.max(-80, Math.min(80, roi/30*80));
+  const color = v.verdict==="BREAK" ? "var(--up)" : v.verdict==="GRADE" ? "var(--grade)" : v.verdict==="NO DATA" ? "var(--muted)" : "var(--hold)";
   return `
   <div class="dialwrap">
     <div class="dial">
@@ -766,44 +772,48 @@ function dialHTML(v){
 /* ---------- Views ---------- */
 function vDashboard(){
   const P = filtered();
-  const movers = [...P].sort((a,b)=>Math.abs(chgPct(b,7))-Math.abs(chgPct(a,7))).slice(0,5);
-  const breaks = P.map(p=>({p,v:valuation(p)})).sort((a,b)=>Math.max(b.v.breakROI,b.v.gradeROI)-Math.max(a.v.breakROI,a.v.gradeROI)).slice(0,5);
-  const idxNow = IDX[IDX.length-1].v, idxPrev = IDX[IDX.length-31].v;
+  const priced = P.filter(p=>price(p)!=null);
+  const movers = priced.filter(p=>chgPct(p,7)!=null).sort((a,b)=>Math.abs(chgPct(b,7))-Math.abs(chgPct(a,7))).slice(0,5);
+  const radar = priced.map(p=>({p,v:valuation(p)})).sort((a,b)=>Math.max(b.v.breakROI??-999,b.v.gradeROI??-999)-Math.max(a.v.breakROI??-999,a.v.gradeROI??-999)).slice(0,5);
+  const idxNow = IDX.length? IDX[IDX.length-1].v : null;
+  const idxPrev = IDX.length>=31 ? IDX[IDX.length-31].v : (IDX.length? IDX[0].v : null);
+  const bestROI = priced.length? Math.max(...priced.map(p=>valuation(p).breakROI ?? -Infinity)) : null;
+  const holds = priced.map(p=>valuation(p).cagr).filter(x=>x!=null);
   return `
   <h1 class="pagetitle">Trading floor</h1>
-  <p class="pagesub">The whole sealed market at a glance — the index, what's moving, and where the math says the cardboard is worth more open than closed.</p>
+  <p class="pagesub">The sealed market from your recorded data — the index, what's moving, and where the math says the cardboard is worth more open than closed. Nothing here is simulated.</p>
   <div class="grid g-4" style="margin-bottom:16px">
-    <div class="panel stat"><div class="v">${idxNow.toFixed(1)}</div><div class="lbl">TCGX Sealed Index ${hint("index")}</div><div class="chg ${cls(idxNow-idxPrev)}">${pct((idxNow/idxPrev-1)*100)} · 30d</div></div>
-    <div class="panel stat"><div class="v">${P.filter(p=>valuation(p).verdict==="BREAK").length}</div><div class="lbl">Products in BREAK zone ${hint("breakzone")}</div><div class="chg neu">of ${P.length} tracked</div></div>
-    <div class="panel stat"><div class="v">${pct(Math.max(...P.map(p=>valuation(p).breakROI)))}</div><div class="lbl">Best break ROI on the board ${hint("breakroi")}</div><div class="chg pos">net of ${(SELL_FEES*100).toFixed(0)}% fees</div></div>
-    <div class="panel stat"><div class="v">${pct(Math.max(...P.map(p=>valuation(p).cagr)))}</div><div class="lbl">Best 12-month hold ${hint("besthold")}</div><div class="chg pos">sealed appreciation</div></div>
+    <div class="panel stat"><div class="v">${idxNow==null?"—":idxNow.toFixed(1)}</div><div class="lbl">TCGX Sealed Index ${hint("index")}</div><div class="chg ${cls(idxNow!=null&&idxPrev!=null?idxNow-idxPrev:null)}">${idxNow!=null&&idxPrev!=null?pct((idxNow/idxPrev-1)*100)+" · to date":"building history"}</div></div>
+    <div class="panel stat"><div class="v">${priced.length? priced.filter(p=>valuation(p).verdict==="BREAK").length : "—"}</div><div class="lbl">Products in BREAK zone ${hint("breakzone")}</div><div class="chg neu">of ${priced.length} priced (${P.length} tracked)</div></div>
+    <div class="panel stat"><div class="v">${bestROI==null||bestROI===-Infinity?"—":pct(bestROI)}</div><div class="lbl">Best break ROI on the board ${hint("breakroi")}</div><div class="chg pos">net of ${(SELL_FEES*100).toFixed(0)}% fees</div></div>
+    <div class="panel stat"><div class="v">${holds.length?pct(Math.max(...holds)):"—"}</div><div class="lbl">Best 12-month hold ${hint("besthold")}</div><div class="chg neu">${holds.length?"recorded appreciation":"needs a year of history"}</div></div>
   </div>
   <div class="grid g-2">
     <div class="panel" style="grid-column:1/-1">
-      <h3>TCGX Sealed Index · 90 days<span class="link" data-goto="markets">All markets →</span></h3>
-      <canvas id="idxchart" height="86"></canvas>
+      <h3>TCGX Sealed Index · recorded history<span class="link" data-goto="markets">All markets →</span></h3>
+      ${IDX.length>=2 ? '<canvas id="idxchart" height="86"></canvas>' : '<div class="empty">The index appears once at least two days of real prices exist for two or more products. Every nightly job and every Data desk save adds a point.</div>'}
     </div>
     <div class="panel">
       <h3>Break radar · best ROI on the board<span class="link" data-goto="engine">Open engine →</span></h3>
-      <table><thead><tr><th>Product</th><th class="num">ROI</th><th class="num">Signal</th></tr></thead><tbody>
-      ${breaks.map(({p,v})=>`<tr class="rowlink" data-prod="${p.id}">
-        <td><div class="prodname">${setOf(p.set).name}${p.hot?'<span class="hotdot"></span>':''}</div><div class="prodmeta">${p.name}</div></td>
-        <td class="num ${cls(v.breakROI)}">${pct(Math.max(v.breakROI,v.gradeROI))}</td>
-        <td class="num"><span class="badge ${v.verdict.toLowerCase()}">${v.verdict}</span></td></tr>`).join("")}
-      </tbody></table>
+      ${radar.length? `<table><thead><tr><th>Product</th><th class="num">ROI</th><th class="num">Signal</th></tr></thead><tbody>
+      ${radar.map(({p,v})=>`<tr class="rowlink" data-prod="${p.id}">
+        <td><div class="prodname">${setOf(p.set).name}</div><div class="prodmeta">${p.name}${estTag(v.est)}</div></td>
+        <td class="num ${cls(v.breakROI)}">${pct(Math.max(v.breakROI??-999,v.gradeROI??-999))}</td>
+        <td class="num">${vBadge(v.verdict)}</td></tr>`).join("")}
+      </tbody></table>` : '<div class="empty">No priced products yet — add real sealed prices in the Data desk.</div>'}
     </div>
     <div class="panel">
       <h3>Top movers · 7 days<span class="link" data-goto="markets">Markets →</span></h3>
-      <table><thead><tr><th>Product</th><th class="num">Price</th><th class="num">7d</th></tr></thead><tbody>
+      ${movers.length? `<table><thead><tr><th>Product</th><th class="num">Price</th><th class="num">7d</th></tr></thead><tbody>
       ${movers.map(p=>`<tr class="rowlink" data-prod="${p.id}">
         <td><div class="prodname">${setOf(p.set).name}</div><div class="prodmeta">${p.name}</div></td>
         <td class="num">${fmt(price(p))}</td>
         <td class="num ${cls(chgPct(p,7))}">${pct(chgPct(p,7))}</td></tr>`).join("")}
-      </tbody></table>
+      </tbody></table>` : '<div class="empty">Movement appears after a week of recorded prices.</div>'}
     </div>
     <div class="panel" style="grid-column:1/-1">
       <h3>News wire<span class="link" data-goto="news">All headlines →</span></h3>
-      ${NEWS.slice(0,3).map(n=>`<div class="news-item"><div class="news-time">${n.ago} ago</div><div><div class="news-title">${n.t}</div><div class="news-body">${n.b}</div></div></div>`).join("")}
+      ${LIVE.news.length? LIVE.news.slice(0,3).map(n=>`<div class="news-item"><div class="news-time">${n.ago} ago</div><div><div class="news-title">${n.u?`<a href="${n.u}" target="_blank" rel="noopener">${n.t} ↗</a>`:n.t}</div><div class="news-body">${n.b}</div></div></div>`).join("") : '<div class="empty">No headlines yet — the nightly news job pulls real articles from PokéBeach into your database.</div>'}
     </div>
   </div>`;
 }
@@ -812,21 +822,21 @@ function vMarkets(){
   const rows = filtered().map(p=>{
     const v = valuation(p);
     return `<tr class="rowlink" data-prod="${p.id}">
-      <td><div class="prodname">${setOf(p.set).name}${p.hot?'<span class="hotdot"></span>':''}</div><div class="prodmeta">${p.name} · <span class="badge game">${setOf(p.set).game}</span></div></td>
+      <td><div class="prodname">${setOf(p.set).name}</div><div class="prodmeta">${p.name} · <span class="badge game">${setOf(p.set).game}</span></div></td>
       <td class="num">${fmt(v.mkt)}</td>
       <td class="num ${cls(chgPct(p,1))}">${pct(chgPct(p,1))}</td>
       <td class="num ${cls(chgPct(p,30))}">${pct(chgPct(p,30))}</td>
-      <td class="num">${fmt(v.netBreak)}</td>
+      <td class="num">${fmt(v.netBreak)}${estTag(v.est)}</td>
       <td class="num ${cls(v.breakROI)}">${pct(v.breakROI)}</td>
-      <td class="num">${heat(p)}</td>
+      <td class="num">${heat(p)==null?"—":heat(p)}</td>
       <td>${sparkline(p)}</td>
-      <td class="num"><span class="badge ${v.verdict.toLowerCase()}">${v.verdict}</span></td>
+      <td class="num">${vBadge(v.verdict)}</td>
       <td class="num"><button class="btn ghost sm" data-watch="${p.id}">${isWatched(p.id)?"★":"☆"}</button></td>
     </tr>`;
   }).join("");
   return `
   <h1 class="pagetitle">Markets</h1>
-  <p class="pagesub">Every tracked sealed product with live pricing, momentum and the engine's current verdict. Click a row for full valuation and charts.</p>
+  <p class="pagesub">Every tracked product with its latest recorded price and the engine's verdict. — means no real data yet, never a guess. Click a row for details.</p>
   <div class="panel" style="overflow-x:auto">
     <table><thead><tr>
       <th>Product</th><th class="num">Market ${hint("market")}</th><th class="num">24h</th><th class="num">30d</th>
@@ -842,35 +852,37 @@ function vDetail(id){
   const cards = CARDS[p.set]||[];
   const evPack = evPerPack(p.set);
   const c30 = chgPct(p,30);
+  const h = histOf(p.id);
   const hitRows = cards.map(c=>{
+    const cv = cardVal(p.set, c);
     const perProduct = c.rate * p.packs;
-    const gradeEV = c.gem*c.psa10 + (1-c.gem)*c.raw*0.75 - GRADE_FEE;
+    const gradeEV = c.psa10 ? (c.gem*c.psa10 + (1-c.gem)*cv.v*0.75 - GRADE_FEE) : null;
     return `<tr>
-      <td><div class="prodname" style="font-weight:500">${c.name}</div></td>
+      <td><div class="prodname" style="font-weight:500">${c.name}<span class="src ${cv.live?'live':'est'}">${cv.live?'LIVE':'EST'}</span></div></td>
       <td class="num">1 : ${Math.round(1/c.rate).toLocaleString()}</td>
       <td class="num">${perProduct>=1?perProduct.toFixed(1)+"×":(perProduct*100).toFixed(1)+"%"}</td>
-      <td class="num">${fmt(c.raw)}</td>
-      <td class="num">${fmt(c.psa10)}</td>
-      <td class="num ${cls(gradeEV-c.raw)}">${c.raw>=100?fmt(Math.round(gradeEV)):"—"}</td>
-      <td class="num">${fmt2(c.rate*c.raw*p.packs)}</td>
+      <td class="num">${fmt(cv.v)}</td>
+      <td class="num">${fmt(c.psa10)}<span class="src est">EST</span></td>
+      <td class="num ${gradeEV!=null?cls(gradeEV-cv.v):''}">${cv.v>=100&&gradeEV!=null?fmt(Math.round(gradeEV)):"—"}</td>
+      <td class="num">${fmt2(c.rate*cv.v*p.packs)}</td>
     </tr>`;
   }).join("");
   const evParts = [
-    {l:"Chase hits", v: cards.filter(c=>c.raw>=100).reduce((s,c)=>s+c.rate*c.raw,0)*p.packs, c:"#818cf8"},
-    {l:"Mid hits",  v: cards.filter(c=>c.raw<100).reduce((s,c)=>s+c.rate*c.raw,0)*p.packs, c:"#5eead4"},
+    {l:"Chase hits", v: cards.filter(c=>cardVal(p.set,c).v>=100).reduce((s2,c)=>s2+c.rate*cardVal(p.set,c).v,0)*p.packs, c:"#818cf8"},
+    {l:"Mid hits",  v: cards.filter(c=>cardVal(p.set,c).v<100).reduce((s2,c)=>s2+c.rate*cardVal(p.set,c).v,0)*p.packs, c:"#5eead4"},
     {l:"Bulk",      v: FILLER_PER_PACK*p.packs, c:"#8a93b2"},
   ];
-  const evTot = evParts.reduce((s,x)=>s+x.v,0);
+  const evTot = evParts.reduce((s2,x)=>s2+x.v,0);
   return `
   <button class="backlink" data-goto="markets">← Markets</button>
   <div class="detail-head">
     <div>
       <h1 class="pagetitle">${s.name} — ${p.name}</h1>
-      <div class="prodmeta" style="font-size:13px">${s.game} · ${p.packs} packs · released ${s.release} ${p.hot?'<span class="hotdot"></span>':''}</div>
+      <div class="prodmeta" style="font-size:13px">${s.game} · ${p.packs} packs · released ${s.release}</div>
     </div>
     <div style="text-align:right">
       <div class="detail-price">${fmt(v.mkt)}</div>
-      <div class="${cls(c30)}" style="font-family:var(--mono);font-size:13px">${pct(c30)} · 30d</div>
+      <div class="prodmeta" style="font-family:var(--mono)">${v.mkt==null? "no recorded price yet" : (LIVE.prices[p.id]?"recorded "+String(LIVE.prices[p.id].at).slice(0,10):"")} ${c30!=null?`· <span class="${cls(c30)}">${pct(c30)} 30d</span>`:""}</div>
     </div>
   </div>
   <div class="grid g-2" style="margin-bottom:16px">
@@ -878,8 +890,10 @@ function vDetail(id){
       <h3>Verdict ${hint("verdict")}</h3>
       ${dialHTML(v)}
       <div class="verdict-sub">
-        Net break value <b>${fmt(v.netBreak)}</b> vs market <b>${fmt(v.mkt)}</b> → break ROI <b class="${cls(v.breakROI)}">${pct(v.breakROI)}</b> ${hint("breakroi")}<br>
-        Break + grade hits: <b>${fmt(v.gradedBreak)}</b> (<b class="${cls(v.gradeROI)}">${pct(v.gradeROI)}</b>) ${hint("gradedbreak")} · 12m sealed hold: <b class="${cls(v.cagr)}">${pct(v.cagr)}</b> ${hint("cagr")}
+        ${v.mkt==null
+          ? `No real sealed price recorded yet. Its statistical contents are worth <b>${fmt(v.netBreak)}</b>${v.est?' (partly EST)':''} net — record a price in the Data desk to get a verdict.`
+          : `Net break value <b>${fmt(v.netBreak)}</b>${estTag(v.est)} vs market <b>${fmt(v.mkt)}</b> → break ROI <b class="${cls(v.breakROI)}">${pct(v.breakROI)}</b> ${hint("breakroi")}<br>
+             Break + grade hits: <b>${fmt(v.gradedBreak)}</b> (<b class="${cls(v.gradeROI)}">${pct(v.gradeROI)}</b>) ${hint("gradedbreak")} · 12m recorded hold: <b class="${cls(v.cagr)}">${pct(v.cagr)}</b> ${hint("cagr")}`}
       </div>
       <div style="display:flex;gap:8px;margin-top:16px;justify-content:center">
         <button class="btn sm" data-watch="${p.id}">${isWatched(p.id)?"★ Watching":"☆ Watch"}</button>
@@ -888,20 +902,21 @@ function vDetail(id){
       </div>
     </div>
     <div class="panel">
-      <h3>Price history</h3>
-      <canvas id="detchart" height="150"></canvas>
+      <h3>Recorded price history</h3>
+      ${h.length>=2 ? '<canvas id="detchart" height="150"></canvas>' : `<div class="empty">${h.length===1?"One real price recorded so far — the chart draws from the second point on.":"No recorded history yet. Every nightly job and Data desk save adds a real, timestamped point."}</div>`}
     </div>
   </div>
   <div class="panel" style="margin-bottom:16px">
     <h3>Expected value composition · ${fmt2(evPack)} / pack ${hint("evpack")}</h3>
     <div class="evbar">${evParts.map(x=>`<div style="width:${x.v/evTot*100}%;background:${x.c}"></div>`).join("")}</div>
     <div class="legend">${evParts.map(x=>`<span><i style="background:${x.c}"></i>${x.l} ${fmt(Math.round(x.v))}</span>`).join("")}
-      <span style="margin-left:auto">Gross break value ${fmt(v.rawBreak)} → net ${fmt(v.netBreak)} after ${(SELL_FEES*100).toFixed(0)}% fees</span></div>
+      <span style="margin-left:auto">Gross ${fmt(v.rawBreak)} → net ${fmt(v.netBreak)} after ${(SELL_FEES*100).toFixed(0)}% fees</span></div>
   </div>
   <div class="panel" style="overflow-x:auto">
     <h3>Hit table & grading premiums</h3>
     <table><thead><tr><th>Card</th><th class="num">Pull rate ${hint("pullrate")}</th><th class="num">Per product ${hint("perproduct")}</th><th class="num">Raw ${hint("rawprice")}</th><th class="num">PSA 10 ${hint("psa10")}</th><th class="num">Grade EV ${hint("gradeev")}</th><th class="num">EV contribution ${hint("evcontrib")}</th></tr></thead>
     <tbody>${hitRows}</tbody></table>
+    <div class="prodmeta" style="margin-top:10px">Pull rates are community-documented averages (no official rates exist). LIVE = real recorded market price · EST = estimate awaiting real data.</div>
   </div>`;
 }
 
@@ -909,12 +924,12 @@ function vEngine(){
   const opts = filtered().map(p=>`<option value="${p.id}">${setOf(p.set).name} — ${p.name}</option>`).join("");
   return `
   <h1 class="pagetitle">Break vs Hold engine</h1>
-  <p class="pagesub">Pick a product, set your actual buy-in and fee assumptions, and the engine computes the full statistical picture: open it, grade the hits, or leave it sealed.</p>
+  <p class="pagesub">Pick a product, set your actual buy-in and fee assumptions, and the engine computes the full statistical picture from the latest recorded card prices.</p>
   <div class="grid g-2">
     <div class="panel">
       <h3>Inputs</h3>
       <div class="field"><label>Product</label><select id="eng-prod">${opts}</select></div>
-      <div class="field"><label>Your buy-in (USD) — leave 0 for market price ${hint("buyin")}</label><input type="number" id="eng-buyin" value="0" min="0"></div>
+      <div class="field"><label>Your buy-in (USD) — required if no recorded price ${hint("buyin")}</label><input type="number" id="eng-buyin" value="0" min="0"></div>
       <div class="field"><label>Selling fee haircut ${hint("sellfee")} <span id="eng-fee-v" style="color:var(--text)">13%</span></label>
         <div class="rangefield"><input type="range" id="eng-fee" min="0" max="25" value="13"><span style="font-family:var(--mono);font-size:12px;color:var(--muted)">%</span></div></div>
       <div class="field"><label>Grading fee per card ${hint("gradefee")} <span id="eng-gfee-v" style="color:var(--text)">$21</span></label>
@@ -925,33 +940,31 @@ function vEngine(){
   </div>`;
 }
 function runEngine(){
-  const p = prodOf($("#eng-prod").value);
+  const p = prodOf($("#eng-prod").value); if(!p) return;
   const fee = +$("#eng-fee").value/100;
   const gfee = +$("#eng-gfee").value;
-  const buyin = +$("#eng-buyin").value || price(p);
-  const cards = CARDS[p.set]||[];
-  const ev = cards.reduce((s,c)=>s+c.rate*c.raw,0)+FILLER_PER_PACK;
-  const uplift = cards.reduce((s,c)=>{ if(c.raw<100)return s; const g=c.gem*c.psa10+(1-c.gem)*c.raw*.75-gfee; return s+c.rate*Math.max(0,g-c.raw);},0);
+  const mkt = price(p);
+  const buyin = +$("#eng-buyin").value || mkt;
+  if(!buyin){ $("#eng-out").innerHTML = '<div class="empty">This product has no recorded market price yet — enter your buy-in above (or record a price in the Data desk).</div>'; return; }
+  const ev = evPerPack(p.set);
+  const uplift = gradeUpliftPerPack(p.set, gfee);
   const netBreak = ev*p.packs*(1-fee);
   const gradedBreak = (ev+uplift)*p.packs*(1-fee);
   const breakROI = (netBreak/buyin-1)*100;
   const gradeROI = (gradedBreak/buyin-1)*100;
-  const cagr = (p.base/p.yearAgo-1)*100;
   let verdict="HOLD";
   if(gradeROI>12 && gradeROI>breakROI+5) verdict="GRADE";
   else if(breakROI>8) verdict="BREAK";
-  const v = {breakROI, verdict};
-  $("#eng-out").innerHTML = dialHTML(v) + `<div class="verdict-sub">
+  $("#eng-out").innerHTML = dialHTML({breakROI, verdict}) + `<div class="verdict-sub">
     At a buy-in of <b>${fmt(buyin)}</b>:<br>
-    Break net: <b>${fmt(netBreak)}</b> (<b class="${cls(breakROI)}">${pct(breakROI)}</b>)<br>
-    Break + grade: <b>${fmt(gradedBreak)}</b> (<b class="${cls(gradeROI)}">${pct(gradeROI)}</b>)<br>
-    Sealed 12m trend: <b class="${cls(cagr)}">${pct(cagr)}</b></div>`;
+    Break net: <b>${fmt(netBreak)}</b>${estTag(setHasEst(p.set))} (<b class="${cls(breakROI)}">${pct(breakROI)}</b>)<br>
+    Break + grade: <b>${fmt(gradedBreak)}</b> (<b class="${cls(gradeROI)}">${pct(gradeROI)}</b>)</div>`;
 }
 
 function vGrading(){
   return `
   <h1 class="pagetitle">Grading Lab</h1>
-  <p class="pagesub">Should this card go to PSA? Enter the raw and PSA 10 prices, set your gem-rate estimate, and see the expected value of the submission.</p>
+  <p class="pagesub">Should this card go to PSA? Enter the prices you see on the market, set your gem-rate assumption, and get the expected value of the submission.</p>
   <div class="grid g-2">
     <div class="panel">
       <h3>Card inputs</h3>
@@ -973,7 +986,7 @@ function runGrading(){
   const gem=+$("#gr-gem").value/100, fee=+$("#gr-fee").value;
   const ev = gem*p10 + (1-gem)*p9 - fee;
   const edge = ev-raw;
-  const be = (raw+fee-p9)/(p10-p9); // break-even gem rate
+  const be = (raw+fee-p9)/(p10-p9);
   const verdict = edge>raw*0.1 ? "GRADE" : edge>0 ? "MARGINAL" : "SELL RAW";
   $("#gr-out").innerHTML = `
   <div class="dialwrap"><div class="verdict-word">${verdict}</div></div>
@@ -988,7 +1001,7 @@ function vSimulator(preselect){
   const opts = filtered().map(p=>`<option value="${p.id}" ${p.id===preselect?"selected":""}>${setOf(p.set).name} — ${p.name}</option>`).join("");
   return `
   <h1 class="pagetitle">Break Simulator</h1>
-  <p class="pagesub">Rip a product virtually using its real pull rates. Every run is a fresh random break — feel the variance before you spend the money. Great content for break streams, too.</p>
+  <p class="pagesub">Rip a product virtually using its documented pull rates and the latest recorded card prices. Every run is a fresh random break — feel the variance before spending real money.</p>
   <div class="panel">
     <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
       <div class="field" style="flex:1;min-width:240px;margin:0"><label>Product</label><select id="sim-prod">${opts}</select></div>
@@ -999,34 +1012,126 @@ function vSimulator(preselect){
   </div>`;
 }
 function runSim(){
-  const p = prodOf($("#sim-prod").value);
+  const p = prodOf($("#sim-prod").value); if(!p) return;
   const cards = CARDS[p.set]||[];
   const pulls=[]; let hitValue=0;
   for(let i=0;i<p.packs;i++){
     let best=null;
-    cards.forEach(c=>{ if(Math.random()<c.rate){ if(!best||c.raw>best.raw) best=c; } });
-    if(best){ pulls.push(best); hitValue+=best.raw; }
+    cards.forEach(c=>{ if(Math.random()<c.rate){ const cv=cardVal(p.set,c); if(!best||cv.v>best.v) best={name:c.name, v:cv.v, live:cv.live}; } });
+    if(best){ pulls.push(best); hitValue+=best.v; }
   }
   const total = hitValue + FILLER_PER_PACK*p.packs;
   const net = total*(1-SELL_FEES);
   const cost = price(p);
-  const roi = (net/cost-1)*100;
-  pulls.sort((a,b)=>b.raw-a.raw);
+  const roi = cost? (net/cost-1)*100 : null;
+  pulls.sort((a,b)=>b.v-a.v);
   const shown = pulls.slice(0,24);
   $("#sim-out").innerHTML = `
-    <div class="packgrid">${shown.length?shown.map((c,i)=>`<div class="pull ${c.raw>=100?'hit':''}" style="animation-delay:${i*45}ms"><div>${c.name}</div><div class="pr">${fmt(c.raw)}</div></div>`).join(""):'<div class="empty" style="grid-column:1/-1">Nothing but bulk this time. That, right there, is variance.</div>'}</div>
+    <div class="packgrid">${shown.length?shown.map((c,i)=>`<div class="pull ${c.v>=100?'hit':''}" style="animation-delay:${i*45}ms"><div>${c.name}</div><div class="pr">${fmt(c.v)}</div></div>`).join(""):'<div class="empty" style="grid-column:1/-1">Nothing but bulk this time. That, right there, is variance.</div>'}</div>
     ${pulls.length>24?`<div class="prodmeta" style="margin-top:8px">+ ${pulls.length-24} smaller hits not shown</div>`:""}
     <div class="simscore">
-      Hits: <b>${pulls.length}</b> · Hit value: <b>${fmt(hitValue)}</b> · With bulk: <b>${fmt(Math.round(total))}</b><br>
-      Net after fees: <b>${fmt(Math.round(net))}</b> vs cost <b>${fmt(cost)}</b> → this break: <b class="${cls(roi)}">${pct(roi)}</b>
+      Hits: <b>${pulls.length}</b> · Hit value: <b>${fmt(Math.round(hitValue))}</b> · With bulk: <b>${fmt(Math.round(total))}</b><br>
+      Net after fees: <b>${fmt(Math.round(net))}</b>${cost?` vs cost <b>${fmt(cost)}</b> → this break: <b class="${cls(roi)}">${pct(roi)}</b>`:` · no recorded cost to compare against yet`}
     </div>`;
 }
-
 function updateSimInfo(){
   const el = $("#sim-info"); if(!el) return;
   const p = prodOf($("#sim-prod").value); if(!p){ el.innerHTML=""; return; }
   const v = valuation(p);
-  el.innerHTML = `Box price <b style="color:var(--text)">${fmt(v.mkt)}</b> · Net break value <b style="color:var(--text)">${fmt(v.netBreak)}</b> (${pct(v.breakROI)}) · <span class="badge ${v.verdict.toLowerCase()}">${v.verdict}</span> — one rip can land far from the average.`;
+  el.innerHTML = `Box price <b style="color:var(--text)">${fmt(v.mkt)}</b> · Net break value <b style="color:var(--text)">${fmt(v.netBreak)}</b>${estTag(v.est)} ${v.breakROI!=null?`(${pct(v.breakROI)})`:""} · ${vBadge(v.verdict)} — one rip can land far from the average.`;
+}
+
+/* ---------- Data desk (real observations in, admin key required to save) ---------- */
+function vDataDesk(){
+  const prodRows = PRODUCTS.map(p=>{
+    const cur = LIVE.prices[p.id];
+    return `<div class="desk-row">
+      <div><div class="prodname" style="font-weight:500">${setOf(p.set).name} — ${p.name}</div>
+      <div class="prodmeta">${cur?`latest ${fmt(cur.v)} · ${String(cur.at).slice(0,10)}`:"no price recorded yet"}</div></div>
+      <input type="number" step="0.01" min="0" placeholder="${cur?cur.v:"USD"}" data-deskprod="${p.id}">
+    </div>`;
+  }).join("");
+  const cardRows = Object.entries(CARDS).map(([setId,list])=>{
+    const s = setOf(setId);
+    return `<div class="prodmeta" style="margin:14px 0 4px;font-weight:600;color:var(--text)">${s.name}</div>` +
+      list.map(c=>{
+        const cv = cardVal(setId,c);
+        return `<div class="desk-row">
+          <div><div style="font-size:13px">${c.name}<span class="src ${cv.live?'live':'est'}">${cv.live?'LIVE':'EST'}</span></div>
+          <div class="prodmeta">${cv.live?`recorded ${fmt(cv.v)}${cv.at?" · "+String(cv.at).slice(0,10):""}`:`estimate ${fmt(c.est)} — replace with a real observed price`}</div></div>
+          <input type="number" step="0.01" min="0" placeholder="${cv.v}" data-deskcard="${setId}|${c.name}">
+        </div>`;
+      }).join("");
+  }).join("");
+  return `
+  <h1 class="pagetitle">Data desk ${hint("datadesk")}</h1>
+  <p class="pagesub">This is where real numbers enter the system. Type prices you actually observe (eBay solds, Cardmarket, your distributor) and save — each save is written to your database with a timestamp and becomes live data and permanent history. Only fill the fields you want to update.</p>
+  <div class="panel" style="margin-bottom:16px">
+    <h3>Admin key</h3>
+    <div class="desk-note">Required to save. It's checked by the server (the same ADMIN_KEY secret on your Worker) — visitors without it can't write anything. Held in memory only, never stored in the page.</div>
+    <input type="password" id="desk-key" placeholder="Paste your ADMIN_KEY" value="${adminKey?"••••••••":""}" style="background:rgba(11,14,26,.6);border:1px solid var(--line-strong);border-radius:10px;padding:10px 12px;font-family:var(--mono);width:100%;outline:none">
+  </div>
+  <div class="grid g-2">
+    <div class="panel">
+      <h3>Sealed product prices (USD)</h3>
+      ${prodRows}
+      <button class="btn foil" id="desk-save-prods" style="width:100%;margin-top:14px">Save sealed prices</button>
+    </div>
+    <div class="panel">
+      <h3>Card prices (USD)</h3>
+      <div class="desk-note">English Pokémon chase cards are refreshed nightly from TCGplayer market data automatically. Japanese and One Piece have no free feed — your observed prices here are the real source.</div>
+      ${cardRows}
+      <button class="btn foil" id="desk-save-cards" style="width:100%;margin-top:14px">Save card prices</button>
+    </div>
+  </div>
+  <div class="panel" style="margin-top:16px">
+    <h3>Post a headline</h3>
+    <div class="desk-note">Nightly job pulls real PokéBeach articles automatically. You can also post your own (restocks you've seen, market observations).</div>
+    <div class="field"><label>Title</label><input id="desk-news-t" type="text"></div>
+    <div class="field"><label>Link (optional)</label><input id="desk-news-u" type="text" placeholder="https://…"></div>
+    <div class="field"><label>Body (optional)</label><input id="desk-news-b" type="text"></div>
+    <div class="field"><label>Tags (comma separated)</label><input id="desk-news-tags" type="text" placeholder="Pokémon, Sealed"></div>
+    <button class="btn" id="desk-save-news">Publish headline</button>
+  </div>`;
+}
+function deskKey(){
+  const el = $("#desk-key");
+  if(el && el.value && el.value !== "••••••••") adminKey = el.value.trim();
+  return adminKey;
+}
+async function deskPost(path, body){
+  const key = deskKey();
+  if(!key){ toast("Paste your ADMIN_KEY first"); return false; }
+  try{
+    const r = await fetch(API_BASE + path, {
+      method:"POST",
+      headers:{ "Content-Type":"application/json", "Authorization":"Bearer " + key },
+      body: JSON.stringify(body)
+    });
+    if(r.status===401){ toast("Wrong admin key — server rejected the save"); return false; }
+    if(!r.ok){ toast("Save failed: " + r.status); return false; }
+    return true;
+  }catch(e){ toast("Save failed: " + e.message); return false; }
+}
+async function deskSaveProducts(){
+  const rows = [...document.querySelectorAll("[data-deskprod]")]
+    .filter(i=>i.value!=="" && +i.value>0)
+    .map(i=>({item_id:i.dataset.deskprod, market_price_usd:+i.value}));
+  if(!rows.length){ toast("No prices entered"); return; }
+  if(await deskPost("/api/prices", rows)){ toast(`Saved ${rows.length} real price${rows.length>1?"s":""}`); loadLive(); go("datadesk"); }
+}
+async function deskSaveCards(){
+  const rows = [...document.querySelectorAll("[data-deskcard]")]
+    .filter(i=>i.value!=="" && +i.value>0)
+    .map(i=>({item_id:"card|"+i.dataset.deskcard, market_price_usd:+i.value}));
+  if(!rows.length){ toast("No prices entered"); return; }
+  if(await deskPost("/api/prices", rows)){ toast(`Saved ${rows.length} card price${rows.length>1?"s":""}`); loadLive(); go("datadesk"); }
+}
+async function deskSaveNews(){
+  const t = $("#desk-news-t").value.trim();
+  if(!t){ toast("Title required"); return; }
+  const body = { title:t, url:$("#desk-news-u").value.trim(), body:$("#desk-news-b").value.trim(), tags:$("#desk-news-tags").value.trim() };
+  if(await deskPost("/api/news", body)){ toast("Headline published"); loadLive(); go("news"); }
 }
 
 /* ---------- Watchlist / Portfolio ---------- */
@@ -1043,37 +1148,40 @@ function vWatchlist(){
   if(!w.length) return `<h1 class="pagetitle">Watchlist</h1><div class="panel"><div class="empty">Nothing watched yet. Hit the ☆ on any product in <b>Markets</b> and it lands here with live verdict tracking.</div></div>`;
   return `
   <h1 class="pagetitle">Watchlist</h1>
-  <p class="pagesub">Your shortlist, always with the current verdict. When the engine flips a product from HOLD to BREAK, you'll see it here first.</p>
+  <p class="pagesub">Your shortlist with the current verdict from recorded data.</p>
   <div class="panel" style="overflow-x:auto"><table>
     <thead><tr><th>Product</th><th class="num">Market</th><th class="num">7d</th><th class="num">Break ROI</th><th>30d</th><th class="num">Verdict</th><th></th></tr></thead><tbody>
     ${w.map(p=>{const v=valuation(p);return `<tr class="rowlink" data-prod="${p.id}">
       <td><div class="prodname">${setOf(p.set).name}</div><div class="prodmeta">${p.name}</div></td>
       <td class="num">${fmt(v.mkt)}</td><td class="num ${cls(chgPct(p,7))}">${pct(chgPct(p,7))}</td>
       <td class="num ${cls(v.breakROI)}">${pct(v.breakROI)}</td><td>${sparkline(p)}</td>
-      <td class="num"><span class="badge ${v.verdict.toLowerCase()}">${v.verdict}</span></td>
+      <td class="num">${vBadge(v.verdict)}</td>
       <td class="num"><button class="btn ghost sm" data-watch="${p.id}">★</button></td></tr>`;}).join("")}
   </tbody></table></div>`;
 }
 function vPortfolio(){
   const port = store.get("tcgx.port",[]);
   const opts = PRODUCTS.map(p=>`<option value="${p.id}">${setOf(p.set).name} — ${p.name}</option>`).join("");
-  let rows="", totCost=0, totVal=0;
-  port.forEach((h,i)=>{
-    const p=prodOf(h.id); if(!p) return;
-    const val=price(p)*h.qty, cost=h.cost*h.qty, pl=(val/cost-1)*100;
-    totCost+=cost; totVal+=val;
+  let rows="", totCost=0, totVal=0, anyUnpriced=false;
+  port.forEach((hd,i)=>{
+    const p=prodOf(hd.id); if(!p) return;
+    const mp = price(p);
+    const val = mp!=null ? mp*hd.qty : null;
+    const cost = hd.cost*hd.qty;
+    totCost+=cost; if(val!=null) totVal+=val; else anyUnpriced=true;
+    const pl = val!=null&&cost>0 ? (val/cost-1)*100 : null;
     rows+=`<tr class="rowlink" data-prod="${p.id}">
       <td><div class="prodname">${setOf(p.set).name}</div><div class="prodmeta">${p.name}</div></td>
-      <td class="num">${h.qty}</td><td class="num">${fmt(h.cost)}</td><td class="num">${fmt(price(p))}</td>
-      <td class="num">${fmt(Math.round(val))}</td><td class="num ${cls(pl)}">${pct(pl)}</td>
+      <td class="num">${hd.qty}</td><td class="num">${fmt(hd.cost)}</td><td class="num">${fmt(mp)}</td>
+      <td class="num">${val!=null?fmt(Math.round(val)):"—"}</td><td class="num ${cls(pl)}">${pct(pl)}</td>
       <td class="num"><button class="btn danger sm" data-delport="${i}">✕</button></td></tr>`;
   });
-  const totPL = totCost? (totVal/totCost-1)*100 : 0;
+  const totPL = totCost&&!anyUnpriced? (totVal/totCost-1)*100 : null;
   return `
   <h1 class="pagetitle">Portfolio</h1>
-  <p class="pagesub">Track your actual sealed positions against live market value — and against what the engine says they'd return broken.</p>
+  <p class="pagesub">Your actual sealed positions against the latest recorded market values.</p>
   <div class="grid g-3" style="margin-bottom:16px">
-    <div class="panel stat"><div class="v">${fmt(Math.round(totVal))}</div><div class="lbl">Market value</div></div>
+    <div class="panel stat"><div class="v">${anyUnpriced?"—":fmt(Math.round(totVal))}</div><div class="lbl">Market value${anyUnpriced?" (some positions unpriced)":""}</div></div>
     <div class="panel stat"><div class="v">${fmt(Math.round(totCost))}</div><div class="lbl">Cost basis</div></div>
     <div class="panel stat"><div class="v ${cls(totPL)}">${pct(totPL)}</div><div class="lbl">Unrealised P/L ${hint("pl")}</div></div>
   </div>
@@ -1093,19 +1201,22 @@ function vPortfolio(){
 }
 
 function vNews(activeTag){
-  const tags=[...new Set(NEWS.flatMap(n=>n.tags))];
-  const list = NEWS.filter(n=>!activeTag||n.tags.includes(activeTag));
+  if(!LIVE.news.length) return `
+  <h1 class="pagetitle">News wire</h1>
+  <div class="panel"><div class="empty">No headlines yet — and no fake ones, ever.<br>The nightly job pulls real PokéBeach articles into your database, and you can publish your own observations from the Data desk.</div></div>`;
+  const tags=[...new Set(LIVE.news.flatMap(n=>n.tags))];
+  const list = LIVE.news.filter(n=>!activeTag||n.tags.includes(activeTag));
   return `
   <h1 class="pagetitle">News wire</h1>
-  <p class="pagesub">Market-moving headlines with the valuation angle attached — what each story means for break, hold and grade decisions.</p>
+  <p class="pagesub">Real headlines from your database — pulled nightly from PokéBeach or posted by you. Titles link to the original source.</p>
   <div class="news-tags" style="margin-bottom:16px">
     <button class="tagchip ${!activeTag?'on':''}" data-tag="">All</button>
     ${tags.map(t=>`<button class="tagchip ${t===activeTag?'on':''}" data-tag="${t}">${t}</button>`).join("")}
   </div>
   <div class="panel">
-    ${list.map(n=>`<div class="news-item"><div class="news-time">${n.ago} ago</div><div>
-      <div class="news-title">${n.t}</div><div class="news-body">${n.b}</div>
-      <div class="news-tags">${n.tags.map(t=>`<button class="tagchip" data-tag="${t}">${t}</button>`).join("")}</div>
+    ${list.map(n=>`<div class="news-item"><div class="news-time">${n.ago?n.ago+" ago":""}</div><div>
+      <div class="news-title">${n.u?`<a href="${n.u}" target="_blank" rel="noopener">${n.t} ↗</a>`:n.t}</div>${n.b?`<div class="news-body">${n.b}</div>`:""}
+      ${n.tags.length?`<div class="news-tags">${n.tags.map(t=>`<button class="tagchip" data-tag="${t}">${t}</button>`).join("")}</div>`:""}
     </div></div>`).join("")}
   </div>`;
 }
@@ -1119,15 +1230,16 @@ function lineChart(el, labels, data, color){
   const g = ctx.getContext("2d").createLinearGradient(0,0,0,ctx.height||200);
   g.addColorStop(0, color.replace(")",",.22)").replace("rgb","rgba"));
   g.addColorStop(1, "rgba(0,0,0,0)");
-  charts.push(new Chart(ctx,{type:"line",data:{labels,datasets:[{data,borderColor:color,backgroundColor:g,fill:true,tension:.3,pointRadius:0,borderWidth:1.8}]},
+  charts.push(new Chart(ctx,{type:"line",data:{labels,datasets:[{data,borderColor:color,backgroundColor:g,fill:true,tension:.3,pointRadius:2,borderWidth:1.8}]},
     options:{responsive:true,plugins:{legend:{display:false},tooltip:{mode:"index",intersect:false,backgroundColor:"#161b34",borderColor:"rgba(140,150,200,.3)",borderWidth:1}},
     scales:{x:{grid:{display:false},ticks:{maxTicksLimit:6}},y:{grid:{color:"rgba(140,150,200,.08)"},ticks:{maxTicksLimit:5}}},interaction:{mode:"index",intersect:false}}}));
 }
 
-/* ---------- Router / render ---------- */
+/* ---------- Router ---------- */
 let newsTag = "";
 function render(){
   killCharts();
+  IDX = indexSeries(filtered());
   document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active", b.dataset.view===currentView));
   if(currentView==="dashboard") viewEl.innerHTML = vDashboard();
   else if(currentView==="markets") viewEl.innerHTML = vMarkets();
@@ -1135,20 +1247,21 @@ function render(){
   else if(currentView==="engine"){ viewEl.innerHTML = vEngine(); runEngine(); }
   else if(currentView==="grading"){ viewEl.innerHTML = vGrading(); runGrading(); }
   else if(currentView==="simulator"){ viewEl.innerHTML = vSimulator(detailId); updateSimInfo(); }
+  else if(currentView==="datadesk") viewEl.innerHTML = vDataDesk();
   else if(currentView==="watchlist") viewEl.innerHTML = vWatchlist();
   else if(currentView==="portfolio") viewEl.innerHTML = vPortfolio();
   else if(currentView==="news") viewEl.innerHTML = vNews(newsTag);
 
-  if(currentView==="dashboard") lineChart("idxchart", IDX.map(x=>x.d.slice(5)), IDX.map(x=>x.v), "rgb(129,140,248)");
+  if(currentView==="dashboard" && IDX.length>=2) lineChart("idxchart", IDX.map(x=>x.d.slice(5)), IDX.map(x=>x.v), "rgb(129,140,248)");
   if(currentView==="detail" && prodOf(detailId)){
-    const h = HIST[detailId];
-    lineChart("detchart", h.map(x=>x.d.slice(5)), h.map(x=>x.v), chgPct(prodOf(detailId),30)>=0?"rgb(52,211,153)":"rgb(251,113,133)");
+    const h = histOf(detailId);
+    if(h.length>=2) lineChart("detchart", h.map(x=>x.d.slice(5)), h.map(x=>x.v), (chgPct(prodOf(detailId),30)??0)>=0?"rgb(52,211,153)":"rgb(251,113,133)");
   }
   window.scrollTo({top:0});
 }
 function go(view, id){ currentView=view; detailId=id??detailId; render(); }
 
-/* ---------- Events (delegated) ---------- */
+/* ---------- Events ---------- */
 document.addEventListener("click", e=>{
   const qm = e.target.closest(".qm");
   if(qm){ e.stopPropagation(); showHint(qm); return; }
@@ -1157,23 +1270,28 @@ document.addEventListener("click", e=>{
   if(gs){
     gameFilter = gs.dataset.game; store.set("tcgx.game", gameFilter);
     document.querySelectorAll("#gameseg button").forEach(b=>b.classList.toggle("on", b.dataset.game===gameFilter));
-    IDX = indexSeries(filtered()); buildTicker(); updateIndexPill(); render(); return;
+    buildTicker(); updateIndexPill(); render(); return;
   }
   const nav = e.target.closest(".navbtn"); if(nav){ go(nav.dataset.view, null); return; }
   const gt = e.target.closest("[data-goto]"); if(gt){ go(gt.dataset.goto); return; }
   const w = e.target.closest("[data-watch]"); if(w){ e.stopPropagation(); toggleWatch(w.dataset.watch); return; }
   const dp = e.target.closest("[data-delport]"); if(dp){ const port=store.get("tcgx.port",[]); port.splice(+dp.dataset.delport,1); store.set("tcgx.port",port); render(); return; }
-  const ap = e.target.closest("[data-addport]"); if(ap){ go("portfolio"); setTimeout(()=>{ $("#pf-prod").value=ap.dataset.addport; $("#pf-cost").value=Math.round(price(prodOf(ap.dataset.addport))); },0); return; }
+  const ap = e.target.closest("[data-addport]"); if(ap){ go("portfolio"); setTimeout(()=>{ $("#pf-prod").value=ap.dataset.addport; const mp=price(prodOf(ap.dataset.addport)); if(mp!=null) $("#pf-cost").value=Math.round(mp); },0); return; }
   const sim = e.target.closest("[data-sim]"); if(sim){ go("simulator", sim.dataset.sim); setTimeout(runSim,60); return; }
   const row = e.target.closest("tr[data-prod]"); if(row){ go("detail", row.dataset.prod); return; }
-  const tag = e.target.closest("[data-tag]"); if(tag!==null && tag!==undefined && tag.dataset){ if(tag.classList.contains("tagchip")){ newsTag=tag.dataset.tag; render(); return; } }
+  const tag = e.target.closest(".tagchip"); if(tag){ newsTag=tag.dataset.tag||""; render(); return; }
   if(e.target.id==="eng-run") runEngine();
   if(e.target.id==="gr-run") runGrading();
   if(e.target.id==="sim-run") runSim();
+  if(e.target.id==="desk-save-prods") deskSaveProducts();
+  if(e.target.id==="desk-save-cards") deskSaveCards();
+  if(e.target.id==="desk-save-news") deskSaveNews();
   if(e.target.id==="pf-add"){
     const port=store.get("tcgx.port",[]);
     const id=$("#pf-prod").value, qty=+$("#pf-qty").value||1;
-    const cost=+$("#pf-cost").value||Math.round(price(prodOf(id)));
+    const mp = price(prodOf(id));
+    const cost=+$("#pf-cost").value || (mp!=null?Math.round(mp):0);
+    if(!cost){ toast("Enter your cost — no recorded market price to assume"); return; }
     port.push({id,qty,cost}); store.set("tcgx.port",port); toast("Position added"); render();
   }
 });
@@ -1201,29 +1319,32 @@ function doSearch(q){
   box.classList.add("open");
 }
 document.addEventListener("click", e=>{
-  const s=e.target.closest("[data-prod-search]");
-  if(s){ $("#searchresults").classList.remove("open"); $("#searchbox").value=""; go("detail", s.dataset.prodSearch); }
+  const s2=e.target.closest("[data-prod-search]");
+  if(s2){ $("#searchresults").classList.remove("open"); $("#searchbox").value=""; go("detail", s2.dataset.prodSearch); }
   else if(!e.target.closest(".search")) $("#searchresults").classList.remove("open");
 });
 
 /* ---------- Clock + index pill ---------- */
 function tickClock(){
-  $("#pill-clock").textContent = new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",second:"2-digit"}) + " UTC" ;
+  $("#pill-clock").textContent = new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",second:"2-digit"}) + " UTC";
 }
 setInterval(tickClock,1000); tickClock();
 function updateIndexPill(){
+  IDX = indexSeries(filtered());
+  if(IDX.length<2){ $("#pill-index").textContent = "—"; $("#pill-index-chg").innerHTML=""; return; }
   const idxNow=IDX[IDX.length-1].v, idxD=IDX[IDX.length-2].v;
   $("#pill-index").textContent = idxNow.toFixed(1);
   $("#pill-index-chg").innerHTML = `<span class="${cls(idxNow-idxD)}" style="font-family:var(--mono)">${pct((idxNow/idxD-1)*100)}</span>`;
 }
-updateIndexPill();
 
 /* ---------- Boot ---------- */
 document.querySelectorAll("#gameseg button").forEach(b=>b.classList.toggle("on", b.dataset.game===gameFilter));
 buildTicker();
+updateIndexPill();
 render();
-tryLiveData();
+loadLive();
 initAuth();
+
 </script>
 </body>
 </html>
