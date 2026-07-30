@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TCGX — Break vs Hold Exchange for Sealed TCG</title>
+<meta name="description" content="Live Break vs Hold valuations, grading EV and market data for sealed Pokémon & One Piece products.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{
+  --ink:#0b0e1a;
+  --ink2:#10142a;
+  --panel:rgba(22,27,52,.62);
+  --panel-solid:#161b34;
+  --line:rgba(140,150,200,.14);
+  --line-strong:rgba(140,150,200,.28);
+  --text:#e7eaf6;
+  --muted:#8a93b2;
+  --up:#34d399;
+  --down:#fb7185;
+  --hold:#fbbf24;
+  --grade:#818cf8;
+  --foil:linear-gradient(100deg,#5eead4 0%,#818cf8 30%,#f0abb8 62%,#fcd34d 100%);
+  --r:16px;
+  --mono:'JetBrains Mono',monospace;
+  --ui:'Sora',sans-serif;
+  --disp:'Unbounded',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink);
+  color:var(--text);
+  font-family:var(--ui);
+  font-size:14px;
+  min-height:100vh;
+  overflow-x:hidden;
+}
+body::before{
+  content:"";position:fixed;inset:0;z-index:-1;
+  background:
+    radial-gradient(900px 600px at 85% -10%, rgba(129,140,248,.16), transparent 60%),
+    radial-gradient(700px 500px at -10% 40%, rgba(94,234,212,.10), transparent 60%),
+    radial-gradient(800px 700px at 60% 110%, rgba(240,171,184,.08), transparent 60%),
+    var(--ink);
+}
+::selection{background:rgba(129,140,248,.4)}
+button{font-family:inherit;color:inherit;background:none;border:none;cursor:pointer}
+input,select{font-family:inherit;color:var(--text)}
+a{color:inherit}
+
+/* ---------- Ticker ---------- */
+.tickerbar{
+  border-bottom:1px solid var(--line);
+  background:rgba(11,14,26,.9);
+  backdrop-filter:blur(8px);
+  overflow:hidden;white-space:nowrap;
+  font-family:var(--mono);font-size:12px;
+  position:sticky;top:0;z-index:50;
+}
+.ticker-track{display:inline-block;padding:8px 0;animation:tick 55s linear infinite}
+.tickerbar:hover .ticker-track{animation-play-state:paused}
+@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.tk{display:inline-flex;gap:8px;margin:0 22px;align-items:baseline}
+.tk .sym{color:var(--muted);letter-spacing:.05em}
+.tk .u{color:var(--up)} .tk .d{color:var(--down)}
+@media (prefers-reduced-motion:reduce){
+  .ticker-track{animation:none}
+  *{transition:none!important}
+}
+
+/* ---------- Shell ---------- */
+.shell{display:grid;grid-template-columns:228px 1fr;max-width:1440px;margin:0 auto;min-height:calc(100vh - 34px)}
+.side{
+  border-right:1px solid var(--line);
+  padding:22px 14px;
+  position:sticky;top:34px;height:calc(100vh - 34px);
+  display:flex;flex-direction:column;gap:4px;
+}
+.wordmark{font-family:var(--disp);font-weight:900;font-size:22px;letter-spacing:.02em;padding:0 10px 4px;position:relative;display:inline-block}
+.wordmark small{font-family:var(--mono);font-weight:400;font-size:10px;color:var(--muted);display:block;letter-spacing:.24em;margin-top:2px}
+.wordmark::after{content:"";position:absolute;left:10px;bottom:-2px;height:3px;width:52px;border-radius:2px;background:var(--foil)}
+.navsec{margin-top:18px;font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:var(--muted);padding:0 10px 6px}
+.navbtn{
+  display:flex;align-items:center;gap:10px;width:100%;
+  padding:10px 12px;border-radius:10px;font-size:13.5px;font-weight:500;color:var(--muted);
+  transition:background .15s,color .15s;text-align:left;
+}
+.navbtn svg{width:16px;height:16px;flex:none;opacity:.8}
+.navbtn:hover{background:rgba(140,150,200,.08);color:var(--text)}
+.navbtn.active{background:rgba(129,140,248,.14);color:var(--text)}
+.navbtn.active svg{opacity:1}
+.side-foot{margin-top:auto;padding:12px 10px;font-size:11px;color:var(--muted);line-height:1.6}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--up);margin-right:6px;box-shadow:0 0 8px var(--up)}
+.dot.demo{background:var(--hold);box-shadow:0 0 8px var(--hold)}
+
+.main{padding:24px 28px 60px;min-width:0}
+.topbar{display:flex;gap:14px;align-items:center;margin-bottom:22px;flex-wrap:wrap}
+.search{
+  flex:1;min-width:220px;display:flex;align-items:center;gap:10px;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px;
+  backdrop-filter:blur(10px);position:relative;
+}
+.search input{background:none;border:none;outline:none;width:100%;font-size:14px}
+.search input::placeholder{color:var(--muted)}
+.search svg{width:15px;height:15px;color:var(--muted);flex:none}
+.search-results{
+  position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:60;
+  background:var(--panel-solid);border:1px solid var(--line-strong);border-radius:12px;
+  max-height:320px;overflow:auto;box-shadow:0 18px 50px rgba(0,0,0,.5);display:none;
+}
+.search-results.open{display:block}
+.sr-item{display:flex;justify-content:space-between;gap:10px;width:100%;padding:11px 14px;font-size:13px;border-bottom:1px solid var(--line);text-align:left}
+.sr-item:last-child{border-bottom:none}
+.sr-item:hover{background:rgba(129,140,248,.1)}
+.sr-item .m{color:var(--muted);font-size:11.5px}
+.pill{
+  font-family:var(--mono);font-size:11px;padding:7px 12px;border-radius:999px;
+  border:1px solid var(--line);color:var(--muted);background:rgba(22,27,52,.4)
+}
+.pill b{color:var(--text);font-weight:500}
+
+/* ---------- Panels / cards ---------- */
+.grid{display:grid;gap:16px}
+.g-2{grid-template-columns:1fr 1fr}
+.g-3{grid-template-columns:repeat(3,1fr)}
+.g-4{grid-template-columns:repeat(4,1fr)}
+.panel{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  backdrop-filter:blur(14px);padding:18px 20px;
+}
+.panel h3{font-size:12px;font-family:var(--mono);font-weight:500;letter-spacing:.18em;color:var(--muted);text-transform:uppercase;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.panel h3 .link{font-size:11px;letter-spacing:.05em;color:var(--grade);text-transform:none;cursor:pointer}
+.stat .v{font-family:var(--mono);font-size:24px;font-weight:700;letter-spacing:-.01em}
+.stat .lbl{color:var(--muted);font-size:12px;margin-top:4px}
+.stat .chg{font-family:var(--mono);font-size:12px;margin-top:6px}
+.pos{color:var(--up)} .neg{color:var(--down)} .neu{color:var(--hold)}
+
+h1.pagetitle{font-family:var(--disp);font-weight:700;font-size:24px;margin-bottom:4px}
+.pagesub{color:var(--muted);margin-bottom:22px;font-size:13.5px;max-width:640px;line-height:1.6}
+
+/* ---------- Tables ---------- */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:1px solid var(--line-strong);font-weight:500}
+td{padding:11px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr.rowlink{cursor:pointer;transition:background .12s}
+tr.rowlink:hover{background:rgba(129,140,248,.07)}
+td.num,th.num{text-align:right;font-family:var(--mono)}
+.prodname{font-weight:600}
+.prodmeta{color:var(--muted);font-size:11.5px;margin-top:2px}
+.badge{font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:6px;letter-spacing:.06em}
+.badge.break{background:rgba(52,211,153,.14);color:var(--up)}
+.badge.hold{background:rgba(251,191,36,.14);color:var(--hold)}
+.badge.grade{background:rgba(129,140,248,.16);color:#a5b0ff}
+.badge.game{background:rgba(140,150,200,.12);color:var(--muted)}
+.hotdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--foil);margin-left:6px;animation:hot 1.6s ease-in-out infinite}
+@keyframes hot{0%,100%{transform:scale(1);opacity:.9}50%{transform:scale(1.35);opacity:.5}}
+.spark{width:110px;height:30px;display:block}
+
+/* ---------- Verdict dial ---------- */
+.dialwrap{display:flex;flex-direction:column;align-items:center;gap:8px;padding:6px 0 2px}
+.dial{width:230px;height:130px;position:relative}
+.dial svg{width:100%;height:100%;overflow:visible}
+.dial-needle{transform-origin:115px 118px;transition:transform 1s cubic-bezier(.22,1.4,.36,1)}
+.verdict-word{
+  font-family:var(--disp);font-weight:900;font-size:30px;letter-spacing:.04em;
+  background:var(--foil);-webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 0 18px rgba(129,140,248,.35));
+}
+.verdict-sub{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center;line-height:1.7}
+.verdict-sub b{color:var(--text)}
+
+/* ---------- Forms / controls ---------- */
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.field label{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase}
+.field input,.field select{
+  background:rgba(11,14,26,.6);border:1px solid var(--line-strong);border-radius:10px;
+  padding:10px 12px;font-size:14px;outline:none;font-family:var(--mono);width:100%;
+}
+.field input:focus,.field select:focus{border-color:var(--grade)}
+.field select option{background:var(--panel-solid)}
+.rangefield{display:grid;grid-template-columns:1fr 64px;gap:10px;align-items:center}
+input[type=range]{-webkit-appearance:none;appearance:none;height:4px;border-radius:2px;background:rgba(140,150,200,.25);outline:none;width:100%}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--grade);cursor:pointer;box-shadow:0 0 10px rgba(129,140,248,.6)}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  padding:11px 18px;border-radius:11px;font-weight:600;font-size:13.5px;
+  background:rgba(129,140,248,.16);border:1px solid rgba(129,140,248,.4);color:#c3cbff;
+  transition:all .15s;
+}
+.btn:hover{background:rgba(129,140,248,.26)}
+.btn.foil{background:var(--foil);color:#0b0e1a;border:none;font-weight:700}
+.btn.foil:hover{filter:brightness(1.08)}
+.btn.ghost{background:none;border:1px solid var(--line-strong);color:var(--muted)}
+.btn.ghost:hover{color:var(--text)}
+.btn.sm{padding:7px 12px;font-size:12px;border-radius:9px}
+.btn.danger{background:rgba(251,113,133,.12);border-color:rgba(251,113,133,.35);color:var(--down)}
+
+/* ---------- News ---------- */
+.news-item{display:grid;grid-template-columns:86px 1fr;gap:16px;padding:16px 0;border-bottom:1px solid var(--line)}
+.news-item:last-child{border-bottom:none}
+.news-time{font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.7}
+.news-title{font-weight:600;font-size:14.5px;line-height:1.45;margin-bottom:5px}
+.news-body{color:var(--muted);font-size:13px;line-height:1.65}
+.news-tags{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap}
+.tagchip{font-family:var(--mono);font-size:10px;padding:3px 9px;border-radius:6px;background:rgba(140,150,200,.1);color:var(--muted);border:none;cursor:pointer}
+.tagchip.on,.tagchip:hover{background:rgba(129,140,248,.18);color:#c3cbff}
+
+/* ---------- Break simulator ---------- */
+.packgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:10px;margin-top:14px}
+.pull{
+  border-radius:10px;border:1px solid var(--line);padding:10px 8px;text-align:center;
+  font-size:11px;background:rgba(11,14,26,.5);animation:pop .35s cubic-bezier(.2,1.6,.4,1) backwards;
+}
+.pull .pr{font-family:var(--mono);font-size:12px;margin-top:4px}
+.pull.hit{border-color:transparent;background:
+  linear-gradient(rgba(16,20,42,.88),rgba(16,20,42,.88)) padding-box,
+  var(--foil) border-box;box-shadow:0 0 22px rgba(129,140,248,.28)}
+.pull.hit .pr{color:#fcd34d}
+@keyframes pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+.simscore{font-family:var(--mono);font-size:15px;margin-top:16px;line-height:1.9}
+
+/* ---------- Detail view ---------- */
+.backlink{color:var(--muted);font-size:13px;margin-bottom:14px;display:inline-flex;gap:6px;align-items:center}
+.backlink:hover{color:var(--text)}
+.detail-head{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;flex-wrap:wrap;margin-bottom:18px}
+.detail-price{font-family:var(--mono);font-size:34px;font-weight:700}
+.chart-tabs{display:flex;gap:6px}
+.chart-tabs button{font-family:var(--mono);font-size:11px;padding:5px 10px;border-radius:8px;color:var(--muted)}
+.chart-tabs button.on{background:rgba(129,140,248,.16);color:#c3cbff}
+.evbar{height:12px;border-radius:6px;background:rgba(140,150,200,.14);overflow:hidden;display:flex;margin:8px 0 4px}
+.evbar div{height:100%}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);font-family:var(--mono)}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px}
+
+.empty{padding:40px 20px;text-align:center;color:var(--muted);line-height:1.8;font-size:13.5px}
+.toast{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);
+  background:var(--panel-solid);border:1px solid var(--line-strong);border-radius:12px;
+  padding:12px 20px;font-size:13.5px;z-index:100;transition:transform .3s;box-shadow:0 12px 40px rgba(0,0,0,.5)
+}
+.toast.show{transform:translateX(-50%) translateY(0)}
+
+@media (max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .side{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:none;border-bottom:1px solid var(--line);padding:14px}
+  .navsec{display:none}
+  .navbtn{width:auto;padding:8px 11px}
+  .navbtn span{display:none}
+  .side-foot{display:none}
+  .g-2,.g-3,.g-4{grid-template-columns:1fr}
+  .main{padding:18px 14px 60px}
+  .spark{width:70px}
+}
+</style>
+</head>
+<body>
+
+<div class="tickerbar"><div class="ticker-track" id="ticker"></div></div>
+
+<div class="shell">
+  <aside class="side">
+    <div class="wordmark">TCGX<small>BREAK · HOLD · GRADE</small></div>
+    <div class="navsec">TERMINAL</div>
+    <button class="navbtn active" data-view="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg><span>Dashboard</span></button>
+    <button class="navbtn" data-view="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg><span>Markets</span></button>
+    <button class="navbtn" data-view="engine"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg><span>Break vs Hold</span></button>
+    <button class="navbtn" data-view="grading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.9 6.3 6.6.6-5 4.5 1.5 6.6L12 16.8 6 20l1.5-6.6-5-4.5 6.6-.6z"/></svg><span>Grading Lab</span></button>
+    <button class="navbtn" data-view="simulator"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.4" fill="currentColor"/><circle cx="15.5" cy="15.5" r="1.4" fill="currentColor"/><circle cx="15.5" cy="8.5" r="1.4" fill="currentColor"/><circle cx="8.5" cy="15.5" r="1.4" fill="currentColor"/></svg><span>Break Simulator</span></button>
+    <div class="navsec">DESK</div>
+    <button class="navbtn" data-view="watchlist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg><span>Watchlist</span></button>
+    <button class="navbtn" data-view="portfolio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg><span>Portfolio</span></button>
+    <button class="navbtn" data-view="news"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0V6"/><path d="M12 6h6M12 10h6M12 14h6M12 18h6"/></svg><span>News Wire</span></button>
+    <div class="side-foot">
+      <div id="datasource"><span class="dot demo"></span>Demo data feed</div>
+      <div style="margin-top:6px">Prices are illustrative until your Cloudflare Worker is connected.</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input id="searchbox" placeholder="Search sets, cases, booster boxes… (e.g. Prismatic, OP-05)" autocomplete="off">
+        <div class="search-results" id="searchresults"></div>
+      </div>
+      <div class="pill">TCGX INDEX <b id="pill-index">—</b> <span id="pill-index-chg"></span></div>
+      <div class="pill" id="pill-clock">—</div>
+    </div>
+    <div id="view"></div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   TCGX — Break vs Hold Exchange
+   Single-file app. Set API_BASE to your Cloudflare Worker URL
+   to switch from demo data to live D1 data.
+   ============================================================ */
+const API_BASE = ""; // e.g. "https://tcgx-api.yourname.workers.dev"
+
+/* ---------- Storage (safe wrapper: falls back to memory) ---------- */
+const store = (() => {
+  let mem = {};
+  const ok = (() => { try { localStorage.setItem("__t","1"); localStorage.removeItem("__t"); return true; } catch(e){ return false; } })();
+  return {
+    get(k, d){ try { const v = ok ? localStorage.getItem(k) : mem[k]; return v ? JSON.parse(v) : d; } catch(e){ return d; } },
+    set(k, v){ try { ok ? localStorage.setItem(k, JSON.stringify(v)) : (mem[k]=JSON.stringify(v)); } catch(e){} }
+  };
+})();
+
+/* ---------- Seeded RNG for stable demo price history ---------- */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function hashStr(s){let h=0;for(let i=0;i<s.length;i++){h=(h<<5)-h+s.charCodeAt(i);h|=0}return Math.abs(h)}
+
+/* ---------- Demo dataset ---------- */
+const SETS = [
+  {id:"sv8pt5", name:"Prismatic Evolutions", game:"Pokémon", release:"2025-01-17"},
+  {id:"sv8",    name:"Surging Sparks",       game:"Pokémon", release:"2024-11-08"},
+  {id:"sv3pt5", name:"151",                  game:"Pokémon", release:"2023-09-22"},
+  {id:"sv4a",   name:"Shiny Treasure ex (JP)",game:"Pokémon", release:"2023-12-01"},
+  {id:"sv7a",   name:"Terastal Festival (JP)",game:"Pokémon", release:"2024-12-06"},
+  {id:"swsh7",  name:"Evolving Skies",       game:"Pokémon", release:"2021-08-27"},
+  {id:"op05",   name:"OP-05 Awakening of the New Era", game:"One Piece", release:"2023-12-08"},
+  {id:"op09",   name:"OP-09 Emperors in the New World", game:"One Piece", release:"2024-06-28"},
+  {id:"eb01",   name:"EB-01 Memorial Collection", game:"One Piece", release:"2024-05-24"},
+];
+
+/* Products: base = current market price (USD), yearAgo = price ~12m ago (for hold CAGR) */
+const PRODUCTS = [
+  {id:"sv8pt5-etb",  set:"sv8pt5", name:"Elite Trainer Box",        packs:9,   base:118,  yearAgo:75,  hot:true},
+  {id:"sv8pt5-bbdl", set:"sv8pt5", name:"Booster Bundle (6-pack)",  packs:6,   base:72,   yearAgo:41,  hot:true},
+  {id:"sv8pt5-case", set:"sv8pt5", name:"Booster Bundle Case (60 packs)", packs:60, base:690, yearAgo:410, hot:true},
+  {id:"sv8-bb",      set:"sv8",    name:"Booster Box (36 packs)",   packs:36,  base:168,  yearAgo:145},
+  {id:"sv8-case",    set:"sv8",    name:"Booster Box Case (6 boxes)",packs:216, base:960,  yearAgo:850},
+  {id:"sv3pt5-upc",  set:"sv3pt5", name:"Ultra Premium Collection", packs:16,  base:145,  yearAgo:120},
+  {id:"sv3pt5-bbdl", set:"sv3pt5", name:"Booster Bundle (6-pack)",  packs:6,   base:52,   yearAgo:38},
+  {id:"sv4a-box",    set:"sv4a",   name:"Booster Box (JP, 30 packs)",packs:30, base:55,   yearAgo:62,  hot:true},
+  {id:"sv4a-case",   set:"sv4a",   name:"Case (12 boxes, 360 packs)",packs:360, base:620,  yearAgo:700},
+  {id:"sv7a-box",    set:"sv7a",   name:"Booster Box (JP, 30 packs)",packs:30, base:92,   yearAgo:71},
+  {id:"swsh7-bb",    set:"swsh7",  name:"Booster Box (36 packs)",   packs:36,  base:1180, yearAgo:820, hot:true},
+  {id:"op05-bb",     set:"op05",   name:"Booster Box (24 packs)",   packs:24,  base:210,  yearAgo:160},
+  {id:"op05-case",   set:"op05",   name:"Case (12 boxes)",          packs:288, base:2350, yearAgo:1800},
+  {id:"op09-bb",     set:"op09",   name:"Booster Box (24 packs)",   packs:24,  base:96,   yearAgo:88},
+  {id:"eb01-bb",     set:"eb01",   name:"Booster Box (24 packs)",   packs:24,  base:132,  yearAgo:104},
+];
+
+/* Chase cards per set: rate = probability per pack, raw / psa10 in USD, gem = PSA10 rate */
+const CARDS = {
+  sv8pt5:[
+    {name:"Umbreon ex 161 (SIR)",   rate:1/1530, raw:1450, psa10:2900, gem:.55},
+    {name:"Sylveon ex 156 (SIR)",   rate:1/1530, raw:520,  psa10:980,  gem:.55},
+    {name:"Espeon ex 155 (SIR)",    rate:1/1530, raw:340,  psa10:640,  gem:.55},
+    {name:"Leafeon ex 144 (SIR)",   rate:1/1530, raw:210,  psa10:420,  gem:.55},
+    {name:"Glaceon ex 150 (SIR)",   rate:1/1530, raw:230,  psa10:450,  gem:.55},
+    {name:"Eeveelution SIR (other)",rate:4/1530, raw:160,  psa10:330,  gem:.55},
+    {name:"Master Ball reverse (avg)",rate:1/32, raw:22,   psa10:70,   gem:.45},
+    {name:"Gold / Hyper rare (avg)",rate:1/180, raw:45,    psa10:110,  gem:.5},
+    {name:"Illustration rare (avg)",rate:1/6,   raw:12,    psa10:40,   gem:.45},
+    {name:"ex / double rare (avg)", rate:1/4,   raw:2.5,   psa10:14,   gem:.4},
+    {name:"ACE SPEC (avg)",         rate:1/20,  raw:8,     psa10:26,   gem:.4},
+  ],
+  sv8:[
+    {name:"Pikachu ex 238 (SIR)",   rate:1/1400, raw:420, psa10:800, gem:.55},
+    {name:"Latias ex 239 (SIR)",    rate:1/1400, raw:210, psa10:410, gem:.55},
+    {name:"Milotic ex 237 (SIR)",   rate:1/1400, raw:160, psa10:330, gem:.55},
+    {name:"SIR (other, avg)",       rate:6/1400, raw:70,  psa10:150, gem:.5},
+    {name:"Illustration rare (avg)",rate:1/6,    raw:6,   psa10:26,  gem:.45},
+    {name:"ex / double rare (avg)", rate:1/4,    raw:2,   psa10:12,  gem:.4},
+  ],
+  sv3pt5:[
+    {name:"Charizard ex 199 (SIR)", rate:1/1300, raw:170, psa10:340, gem:.55},
+    {name:"Venusaur/Blastoise SIR", rate:2/1300, raw:75,  psa10:160, gem:.55},
+    {name:"SIR (other, avg)",       rate:5/1300, raw:45,  psa10:100, gem:.5},
+    {name:"Illustration rare (avg)",rate:1/6,    raw:7,   psa10:26,  gem:.45},
+    {name:"ex / double rare (avg)", rate:1/4,    raw:2.5, psa10:14,  gem:.4},
+  ],
+  sv4a:[
+    {name:"Charizard ex SAR",       rate:1/600,  raw:95,  psa10:210, gem:.62},
+    {name:"Mew ex SAR",             rate:1/600,  raw:40,  psa10:95,  gem:.62},
+    {name:"SAR (other, avg)",       rate:8/600,  raw:32,  psa10:75,  gem:.6},
+    {name:"Shiny (S/SSR avg)",      rate:1/3.2,  raw:2.2, psa10:14,  gem:.55},
+    {name:"AR slot (avg)",          rate:1/2,    raw:1.2, psa10:11,  gem:.5},
+  ],
+  sv7a:[
+    {name:"Eevee ex SAR",           rate:1/650,  raw:120, psa10:260, gem:.62},
+    {name:"Sylveon ex SAR",         rate:1/650,  raw:90,  psa10:200, gem:.62},
+    {name:"SAR (other, avg)",       rate:9/650,  raw:25,  psa10:60,  gem:.6},
+    {name:"AR / chase reverse (avg)",rate:1/4,   raw:1.8, psa10:15,  gem:.55},
+  ],
+  swsh7:[
+    {name:"Umbreon VMAX (Moonbreon)",rate:1/1450, raw:1350, psa10:2600, gem:.5},
+    {name:"Rayquaza VMAX alt",      rate:1/1450, raw:600,  psa10:1150, gem:.5},
+    {name:"Sylveon VMAX alt",       rate:1/1450, raw:480,  psa10:900,  gem:.5},
+    {name:"Alt art (other, avg)",   rate:6/1450, raw:150,  psa10:320,  gem:.5},
+    {name:"V / VMAX (avg)",         rate:1/6,    raw:4,    psa10:22,   gem:.45},
+  ],
+  op05:[
+    {name:"Monkey.D.Luffy 119 (Manga)",rate:1/2100, raw:820, psa10:1500, gem:.6},
+    {name:"Sabo alt art",           rate:1/700,  raw:120, psa10:250, gem:.6},
+    {name:"SEC / alt (avg)",        rate:5/700,  raw:45,  psa10:110, gem:.58},
+    {name:"SR (avg)",               rate:1/4,    raw:2.5, psa10:16,  gem:.5},
+  ],
+  op09:[
+    {name:"Shanks manga rare",      rate:1/2000, raw:380, psa10:760, gem:.6},
+    {name:"SEC / alt (avg)",        rate:5/700,  raw:30,  psa10:80,  gem:.58},
+    {name:"SR (avg)",               rate:1/4,    raw:1.8, psa10:14,  gem:.5},
+  ],
+  eb01:[
+    {name:"Shanks 004 alt (Manga)", rate:1/1800, raw:450, psa10:900, gem:.6},
+    {name:"SP card (avg)",          rate:1/24,   raw:18,  psa10:55,  gem:.55},
+    {name:"SR (avg)",               rate:1/4,    raw:2.2, psa10:15,  gem:.5},
+  ],
+};
+const FILLER_PER_PACK = 0.35;      // bulk value per pack (USD)
+const SELL_FEES = 0.13;            // marketplace + shipping haircut on singles
+const GRADE_FEE = 21;              // PSA bulk/value tier per card
+
+/* ---------- Price history (90 days, seeded) ---------- */
+function history(p, days=90){
+  const rnd = mulberry32(hashStr(p.id));
+  const drift = Math.pow(p.base / p.yearAgo, 1/365) - 1;
+  let v = p.base / Math.pow(1+drift, days);
+  const out = [];
+  const today = new Date();
+  for(let i=days;i>=0;i--){
+    const d = new Date(today); d.setDate(d.getDate()-i);
+    v = v * (1 + drift + (rnd()-.5)*0.028);
+    out.push({d: d.toISOString().slice(0,10), v: +v.toFixed(2)});
+  }
+  out[out.length-1].v = p.base;
+  return out;
+}
+const HIST = {}; PRODUCTS.forEach(p => HIST[p.id] = history(p));
+const setOf = id => SETS.find(s=>s.id===id);
+const prodOf = id => PRODUCTS.find(p=>p.id===id);
+const price = p => HIST[p.id][HIST[p.id].length-1].v;
+const chgPct = (p, days) => { const h=HIST[p.id]; const a=h[h.length-1-days].v, b=h[h.length-1].v; return (b/a-1)*100; };
+
+/* ---------- Valuation engine ---------- */
+function evPerPack(setId){
+  return (CARDS[setId]||[]).reduce((s,c)=>s + c.rate*c.raw, 0) + FILLER_PER_PACK;
+}
+function gradeUpliftPerPack(setId){
+  // extra EV if every graded-worthy hit (raw >= 100) is graded instead of sold raw
+  return (CARDS[setId]||[]).reduce((s,c)=>{
+    if(c.raw < 100) return s;
+    const gradeEV = c.gem*c.psa10 + (1-c.gem)*c.raw*0.75 - GRADE_FEE;
+    return s + c.rate * Math.max(0, gradeEV - c.raw);
+  },0);
+}
+function valuation(p){
+  const mkt = price(p);
+  const rawBreak = evPerPack(p.set) * p.packs;
+  const netBreak = rawBreak * (1-SELL_FEES);
+  const gradedBreak = (evPerPack(p.set) + gradeUpliftPerPack(p.set)) * p.packs * (1-SELL_FEES);
+  const cagr = (Math.pow(p.base/p.yearAgo, 1) - 1) * 100; // 12m appreciation
+  const breakROI = (netBreak/mkt - 1) * 100;
+  const gradeROI = (gradedBreak/mkt - 1) * 100;
+  let verdict = "HOLD";
+  if(gradeROI > 12 && gradeROI > breakROI + 5) verdict = "GRADE";
+  else if(breakROI > 8) verdict = "BREAK";
+  else if(cagr < 2 && breakROI > 0) verdict = "BREAK";
+  return {mkt, rawBreak, netBreak, gradedBreak, cagr, breakROI, gradeROI, verdict};
+}
+function heat(p){ // momentum score 0-100
+  const m7=chgPct(p,7), m30=chgPct(p,30);
+  return Math.max(0, Math.min(100, Math.round(50 + m7*4 + m30*1.2)));
+}
+
+/* ---------- Index ---------- */
+function indexSeries(){
+  const days = HIST[PRODUCTS[0].id].length;
+  const out=[];
+  for(let i=0;i<days;i++){
+    let sum=0; PRODUCTS.forEach(p=>{ sum += HIST[p.id][i].v / HIST[p.id][0].v; });
+    out.push({d: HIST[PRODUCTS[0].id][i].d, v: +(100*sum/PRODUCTS.length).toFixed(2)});
+  }
+  return out;
+}
+const IDX = indexSeries();
+
+/* ---------- Demo news wire ---------- */
+const NEWS = [
+  {t:"Prismatic Evolutions restock wave sells through in hours — sealed premiums widen", ago:"2h", tags:["Pokémon","Sealed","Restock"], b:"Major retailers listed Elite Trainer Boxes at MSRP this morning; aftermarket asks moved up ~4% within the day as allocations cleared. Break EV remains below market on ETBs — the premium is collector-driven, not pull-driven."},
+  {t:"PSA turnaround times drop to 12 business days on value tier", ago:"6h", tags:["Grading","PSA"], b:"Faster turnaround lowers the effective carrying cost of grading submissions. The Grading Lab default fee assumption is unchanged, but time-to-cash improves for BREAK+GRADE strategies."},
+  {t:"Shiny Treasure ex (sv4a) reprint allocation confirmed for EU distributors", ago:"1d", tags:["Pokémon","Japan","Supply"], b:"Fresh supply typically compresses box prices 5–10% short-term while singles hold. Watch the sv4a Break ROI — reprints historically flip JP boxes from HOLD to BREAK."},
+  {t:"One Piece OP-05 case values hit new 12-month high", ago:"1d", tags:["One Piece","Sealed"], b:"Manga Luffy demand continues to carry the set. Case CAGR now outpaces break value growth — the engine keeps OP-05 in HOLD territory."},
+  {t:"Evolving Skies: raw Moonbreon prices firm ahead of anniversary", ago:"2d", tags:["Pokémon","Singles"], b:"Alt-art eeveelutions remain the deepest liquidity pool in modern Pokémon. Booster box EV is dominated by three cards — variance per box is extreme; case-level breaking recommended."},
+  {t:"Cardmarket fee update: private seller commission unchanged for 2026", ago:"3d", tags:["Marketplaces","Fees"], b:"The default 13% net-of-fees haircut in the valuation engine remains a reasonable EU assumption. US-only sellers on eBay should model 14–15% with shipping."},
+  {t:"Terastal Festival (JP) singles index up 9% month-over-month", ago:"4d", tags:["Pokémon","Japan"], b:"Eevee ex SAR leads. JP high-rarity gem rates (~60%+) keep GRADE verdicts more common on Japanese product than English."},
+];
+
+/* ---------- Live-data hook (Cloudflare Worker) ---------- */
+async function tryLiveData(){
+  if(!API_BASE) return;
+  try{
+    const r = await fetch(API_BASE + "/api/products");
+    if(!r.ok) throw 0;
+    const live = await r.json();
+    live.forEach(row=>{
+      const p = prodOf(row.id);
+      if(p && row.market_price_usd){ p.base = row.market_price_usd; HIST[p.id] = history(p); }
+    });
+    document.getElementById("datasource").innerHTML = '<span class="dot"></span>Live feed · Cloudflare D1';
+    render();
+  }catch(e){ /* stay on demo data */ }
+}
+
+/* ============================================================
+   UI
+   ============================================================ */
+const $ = s => document.querySelector(s);
+const viewEl = $("#view");
+const fmt = n => "$" + n.toLocaleString("en-US",{maximumFractionDigits:0});
+const fmt2 = n => "$" + n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+const pct = n => (n>=0?"+":"") + n.toFixed(1) + "%";
+const cls = n => n>=0 ? "pos" : "neg";
+let currentView = "dashboard";
+let detailId = null;
+let charts = [];
+
+function toast(msg){
+  const t=$("#toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"), 2400);
+}
+function killCharts(){ charts.forEach(c=>c.destroy()); charts=[]; }
+
+function sparkline(p){
+  const h = HIST[p.id].slice(-30).map(x=>x.v);
+  const min=Math.min(...h), max=Math.max(...h), rng=(max-min)||1;
+  const pts = h.map((v,i)=>`${(i/(h.length-1)*110).toFixed(1)},${(28-(v-min)/rng*24+1).toFixed(1)}`).join(" ");
+  const up = h[h.length-1]>=h[0];
+  return `<svg class="spark" viewBox="0 0 110 30" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="${up?'#34d399':'#fb7185'}" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+}
+
+/* ---------- Ticker ---------- */
+function buildTicker(){
+  const items = PRODUCTS.map(p=>{
+    const c = chgPct(p,1);
+    const sym = p.id.toUpperCase().replace(/-/g,".");
+    return `<span class="tk"><span class="sym">${sym}</span><span>${fmt(price(p))}</span><span class="${c>=0?'u':'d'}">${pct(c)}</span></span>`;
+  }).join("");
+  $("#ticker").innerHTML = items + items; // duplicate for seamless loop
+}
+
+/* ---------- Verdict dial ---------- */
+function dialHTML(v){
+  // needle angle: breakROI mapped -30%..+30% → -80°..+80°
+  const ang = Math.max(-80, Math.min(80, v.breakROI/30*80));
+  const color = v.verdict==="BREAK" ? "var(--up)" : v.verdict==="GRADE" ? "var(--grade)" : "var(--hold)";
+  return `
+  <div class="dialwrap">
+    <div class="dial">
+      <svg viewBox="0 0 230 130">
+        <defs><linearGradient id="foilg" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#5eead4"/><stop offset="35%" stop-color="#818cf8"/>
+          <stop offset="65%" stop-color="#f0abb8"/><stop offset="100%" stop-color="#fcd34d"/>
+        </linearGradient></defs>
+        <path d="M 25 118 A 90 90 0 0 1 205 118" fill="none" stroke="rgba(140,150,200,.15)" stroke-width="14" stroke-linecap="round"/>
+        <path d="M 25 118 A 90 90 0 0 1 205 118" fill="none" stroke="url(#foilg)" stroke-width="14" stroke-linecap="round" stroke-dasharray="283" stroke-dashoffset="${283 - (ang+80)/160*283}"/>
+        <g class="dial-needle" style="transform:rotate(${ang}deg)">
+          <line x1="115" y1="118" x2="115" y2="42" stroke="${color}" stroke-width="3" stroke-linecap="round"/>
+          <circle cx="115" cy="118" r="6" fill="${color}"/>
+        </g>
+        <text x="22" y="128" font-size="9" fill="#8a93b2" font-family="JetBrains Mono">HOLD</text>
+        <text x="182" y="128" font-size="9" fill="#8a93b2" font-family="JetBrains Mono">BREAK</text>
+      </svg>
+    </div>
+    <div class="verdict-word">${v.verdict}</div>
+  </div>`;
+}
+
+/* ---------- Views ---------- */
+function vDashboard(){
+  const movers = [...PRODUCTS].sort((a,b)=>Math.abs(chgPct(b,7))-Math.abs(chgPct(a,7))).slice(0,5);
+  const breaks = PRODUCTS.map(p=>({p,v:valuation(p)})).sort((a,b)=>Math.max(b.v.breakROI,b.v.gradeROI)-Math.max(a.v.breakROI,a.v.gradeROI)).slice(0,5);
+  const idxNow = IDX[IDX.length-1].v, idxPrev = IDX[IDX.length-31].v;
+  return `
+  <h1 class="pagetitle">Trading floor</h1>
+  <p class="pagesub">The whole sealed market at a glance — the index, what's moving, and where the math says the cardboard is worth more open than closed.</p>
+  <div class="grid g-4" style="margin-bottom:16px">
+    <div class="panel stat"><div class="v">${idxNow.toFixed(1)}</div><div class="lbl">TCGX Sealed Index</div><div class="chg ${cls(idxNow-idxPrev)}">${pct((idxNow/idxPrev-1)*100)} · 30d</div></div>
+    <div class="panel stat"><div class="v">${PRODUCTS.filter(p=>valuation(p).verdict==="BREAK").length}</div><div class="lbl">Products in BREAK zone</div><div class="chg neu">of ${PRODUCTS.length} tracked</div></div>
+    <div class="panel stat"><div class="v">${pct(Math.max(...PRODUCTS.map(p=>valuation(p).breakROI)))}</div><div class="lbl">Best break ROI on the board</div><div class="chg pos">net of ${(SELL_FEES*100).toFixed(0)}% fees</div></div>
+    <div class="panel stat"><div class="v">${pct(Math.max(...PRODUCTS.map(p=>valuation(p).cagr)))}</div><div class="lbl">Best 12-month hold</div><div class="chg pos">sealed appreciation</div></div>
+  </div>
+  <div class="grid g-2">
+    <div class="panel" style="grid-column:1/-1">
+      <h3>TCGX Sealed Index · 90 days<span class="link" data-goto="markets">All markets →</span></h3>
+      <canvas id="idxchart" height="86"></canvas>
+    </div>
+    <div class="panel">
+      <h3>Break radar · best ROI on the board<span class="link" data-goto="engine">Open engine →</span></h3>
+      <table><thead><tr><th>Product</th><th class="num">ROI</th><th class="num">Signal</th></tr></thead><tbody>
+      ${breaks.map(({p,v})=>`<tr class="rowlink" data-prod="${p.id}">
+        <td><div class="prodname">${setOf(p.set).name}${p.hot?'<span class="hotdot"></span>':''}</div><div class="prodmeta">${p.name}</div></td>
+        <td class="num ${cls(v.breakROI)}">${pct(Math.max(v.breakROI,v.gradeROI))}</td>
+        <td class="num"><span class="badge ${v.verdict.toLowerCase()}">${v.verdict}</span></td></tr>`).join("")}
+      </tbody></table>
+    </div>
+    <div class="panel">
+      <h3>Top movers · 7 days<span class="link" data-goto="markets">Markets →</span></h3>
+      <table><thead><tr><th>Product</th><th class="num">Price</th><th class="num">7d</th></tr></thead><tbody>
+      ${movers.map(p=>`<tr class="rowlink" data-prod="${p.id}">
+        <td><div class="prodname">${setOf(p.set).name}</div><div class="prodmeta">${p.name}</div></td>
+        <td class="num">${fmt(price(p))}</td>
+        <td class="num ${cls(chgPct(p,7))}">${pct(chgPct(p,7))}</td></tr>`).join("")}
+      </tbody></table>
+    </div>
+    <div class="panel" style="grid-column:1/-1">
+      <h3>News wire<span class="link" data-goto="news">All headlines →</span></h3>
+      ${NEWS.slice(0,3).map(n=>`<div class="news-item"><div class="news-time">${n.ago} ago</div><div><div class="news-title">${n.t}</div><div class="news-body">${n.b}</div></div></div>`).join("")}
+    </div>
+  </div>`;
+}
+
+function vMarkets(){
+  const rows = PRODUCTS.map(p=>{
+    const v = valuation(p);
+    return `<tr class="rowlink" data-prod="${p.id}">
+      <td><div class="prodname">${setOf(p.set).name}${p.hot?'<span class="hotdot"></span>':''}</div><div class="prodmeta">${p.name} · <span class="badge game">${setOf(p.set).game}</span></div></td>
+      <td class="num">${fmt(v.mkt)}</td>
+      <td class="num ${cls(chgPct(p,1))}">${pct(chgPct(p,1))}</td>
+      <td class="num ${cls(chgPct(p,30))}">${pct(chgPct(p,30))}</td>
+      <td class="num">${fmt(v.netBreak)}</td>
+      <td class="num ${cls(v.breakROI)}">${pct(v.breakROI)}</td>
+      <td class="num">${heat(p)}</td>
+      <td>${sparkline(p)}</td>
+      <td class="num"><span class="badge ${v.verdict.toLowerCase()}">${v.verdict}</span></td>
+      <td class="num"><button class="btn ghost sm" data-watch="${p.id}">${isWatched(p.id)?"★":"☆"}</button></td>
+    </tr>`;
+  }).join("");
+  return `
+  <h1 class="pagetitle">Markets</h1>
+  <p class="pagesub">Every tracked sealed product with live pricing, momentum and the engine's current verdict. Click a row for full valuation and charts.</p>
+  <div class="panel" style="overflow-x:auto">
+    <table><thead><tr>
+      <th>Product</th><th class="num">Market</th><th class="num">24h</th><th class="num">30d</th>
+      <th class="num">Break value</th><th class="num">Break ROI</th><th class="num">Heat</th><th>30d</th><th class="num">Verdict</th><th></th>
+    </tr></thead><tbody>${rows}</tbody></table>
+  </div>`;
+}
+
+function vDetail(id){
+  const p = prodOf(id); if(!p) return vMarkets();
+  const s = setOf(p.set);
+  const v = valuation(p);
+  const cards = CARDS[p.set]||[];
+  const evPack = evPerPack(p.set);
+  const c30 = chgPct(p,30);
+  const hitRows = cards.map(c=>{
+    const perProduct = c.rate * p.packs;
+    const gradeEV = c.gem*c.psa10 + (1-c.gem)*c.raw*0.75 - GRADE_FEE;
+    return `<tr>
+      <td><div class="prodname" style="font-weight:500">${c.name}</div></td>
+      <td class="num">1 : ${Math.round(1/c.rate).toLocaleString()}</td>
+      <td class="num">${perProduct>=1?perProduct.toFixed(1)+"×":(perProduct*100).toFixed(1)+"%"}</td>
+      <td class="num">${fmt(c.raw)}</td>
+      <td class="num">${fmt(c.psa10)}</td>
+      <td class="num ${cls(gradeEV-c.raw)}">${c.raw>=100?fmt(Math.round(gradeEV)):"—"}</td>
+      <td class="num">${fmt2(c.rate*c.raw*p.packs)}</td>
+    </tr>`;
+  }).join("");
+  const evParts = [
+    {l:"Chase hits", v: cards.filter(c=>c.raw>=100).reduce((s,c)=>s+c.rate*c.raw,0)*p.packs, c:"#818cf8"},
+    {l:"Mid hits",  v: cards.filter(c=>c.raw<100).reduce((s,c)=>s+c.rate*c.raw,0)*p.packs, c:"#5eead4"},
+    {l:"Bulk",      v: FILLER_PER_PACK*p.packs, c:"#8a93b2"},
+  ];
+  const evTot = evParts.reduce((s,x)=>s+x.v,0);
+  return `
+  <button class="backlink" data-goto="markets">← Markets</button>
+  <div class="detail-head">
+    <div>
+      <h1 class="pagetitle">${s.name} — ${p.name}</h1>
+      <div class="prodmeta" style="font-size:13px">${s.game} · ${p.packs} packs · released ${s.release} ${p.hot?'<span class="hotdot"></span>':''}</div>
+    </div>
+    <div style="text-align:right">
+      <div class="detail-price">${fmt(v.mkt)}</div>
+      <div class="${cls(c30)}" style="font-family:var(--mono);font-size:13px">${pct(c30)} · 30d</div>
+    </div>
+  </div>
+  <div class="grid g-2" style="margin-bottom:16px">
+    <div class="panel">
+      <h3>Verdict</h3>
+      ${dialHTML(v)}
+      <div class="verdict-sub">
+        Net break value <b>${fmt(v.netBreak)}</b> vs market <b>${fmt(v.mkt)}</b> → break ROI <b class="${cls(v.breakROI)}">${pct(v.breakROI)}</b><br>
+        Break + grade hits: <b>${fmt(v.gradedBreak)}</b> (<b class="${cls(v.gradeROI)}">${pct(v.gradeROI)}</b>) · 12m sealed hold: <b class="${cls(v.cagr)}">${pct(v.cagr)}</b>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px;justify-content:center">
+        <button class="btn sm" data-watch="${p.id}">${isWatched(p.id)?"★ Watching":"☆ Watch"}</button>
+        <button class="btn sm" data-addport="${p.id}">＋ Portfolio</button>
+        <button class="btn foil sm" data-sim="${p.id}">Simulate break</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Price history</h3>
+      <canvas id="detchart" height="150"></canvas>
+    </div>
+  </div>
+  <div class="panel" style="margin-bottom:16px">
+    <h3>Expected value composition · ${fmt2(evPack)} / pack</h3>
+    <div class="evbar">${evParts.map(x=>`<div style="width:${x.v/evTot*100}%;background:${x.c}"></div>`).join("")}</div>
+    <div class="legend">${evParts.map(x=>`<span><i style="background:${x.c}"></i>${x.l} ${fmt(Math.round(x.v))}</span>`).join("")}
+      <span style="margin-left:auto">Gross break value ${fmt(v.rawBreak)} → net ${fmt(v.netBreak)} after ${(SELL_FEES*100).toFixed(0)}% fees</span></div>
+  </div>
+  <div class="panel" style="overflow-x:auto">
+    <h3>Hit table & grading premiums</h3>
+    <table><thead><tr><th>Card</th><th class="num">Pull rate</th><th class="num">Per product</th><th class="num">Raw</th><th class="num">PSA 10</th><th class="num">Grade EV</th><th class="num">EV contribution</th></tr></thead>
+    <tbody>${hitRows}</tbody></table>
+  </div>`;
+}
+
+function vEngine(){
+  const opts = PRODUCTS.map(p=>`<option value="${p.id}">${setOf(p.set).name} — ${p.name}</option>`).join("");
+  return `
+  <h1 class="pagetitle">Break vs Hold engine</h1>
+  <p class="pagesub">Pick a product, set your actual buy-in and fee assumptions, and the engine computes the full statistical picture: open it, grade the hits, or leave it sealed.</p>
+  <div class="grid g-2">
+    <div class="panel">
+      <h3>Inputs</h3>
+      <div class="field"><label>Product</label><select id="eng-prod">${opts}</select></div>
+      <div class="field"><label>Your buy-in (USD) — leave 0 for market price</label><input type="number" id="eng-buyin" value="0" min="0"></div>
+      <div class="field"><label>Selling fee haircut <span id="eng-fee-v" style="color:var(--text)">13%</span></label>
+        <div class="rangefield"><input type="range" id="eng-fee" min="0" max="25" value="13"><span style="font-family:var(--mono);font-size:12px;color:var(--muted)">%</span></div></div>
+      <div class="field"><label>Grading fee per card <span id="eng-gfee-v" style="color:var(--text)">$21</span></label>
+        <div class="rangefield"><input type="range" id="eng-gfee" min="10" max="80" value="21"><span style="font-family:var(--mono);font-size:12px;color:var(--muted)">USD</span></div></div>
+      <button class="btn foil" id="eng-run" style="width:100%">Run valuation</button>
+    </div>
+    <div class="panel"><h3>Verdict</h3><div id="eng-out" class="empty">Run a valuation to see the dial.</div></div>
+  </div>`;
+}
+function runEngine(){
+  const p = prodOf($("#eng-prod").value);
+  const fee = +$("#eng-fee").value/100;
+  const gfee = +$("#eng-gfee").value;
+  const buyin = +$("#eng-buyin").value || price(p);
+  const cards = CARDS[p.set]||[];
+  const ev = cards.reduce((s,c)=>s+c.rate*c.raw,0)+FILLER_PER_PACK;
+  const uplift = cards.reduce((s,c)=>{ if(c.raw<100)return s; const g=c.gem*c.psa10+(1-c.gem)*c.raw*.75-gfee; return s+c.rate*Math.max(0,g-c.raw);},0);
+  const netBreak = ev*p.packs*(1-fee);
+  const gradedBreak = (ev+uplift)*p.packs*(1-fee);
+  const breakROI = (netBreak/buyin-1)*100;
+  const gradeROI = (gradedBreak/buyin-1)*100;
+  const cagr = (p.base/p.yearAgo-1)*100;
+  let verdict="HOLD";
+  if(gradeROI>12 && gradeROI>breakROI+5) verdict="GRADE";
+  else if(breakROI>8) verdict="BREAK";
+  const v = {breakROI, verdict};
+  $("#eng-out").innerHTML = dialHTML(v) + `<div class="verdict-sub">
+    At a buy-in of <b>${fmt(buyin)}</b>:<br>
+    Break net: <b>${fmt(netBreak)}</b> (<b class="${cls(breakROI)}">${pct(breakROI)}</b>)<br>
+    Break + grade: <b>${fmt(gradedBreak)}</b> (<b class="${cls(gradeROI)}">${pct(gradeROI)}</b>)<br>
+    Sealed 12m trend: <b class="${cls(cagr)}">${pct(cagr)}</b></div>`;
+}
+
+function vGrading(){
+  return `
+  <h1 class="pagetitle">Grading Lab</h1>
+  <p class="pagesub">Should this card go to PSA? Enter the raw and PSA 10 prices, set your gem-rate estimate, and see the expected value of the submission.</p>
+  <div class="grid g-2">
+    <div class="panel">
+      <h3>Card inputs</h3>
+      <div class="field"><label>Raw price (USD)</label><input type="number" id="gr-raw" value="150"></div>
+      <div class="field"><label>PSA 10 price (USD)</label><input type="number" id="gr-psa10" value="320"></div>
+      <div class="field"><label>PSA 9 price — leave 0 for 75% of raw</label><input type="number" id="gr-psa9" value="0"></div>
+      <div class="field"><label>Gem rate (PSA 10 probability) <span id="gr-gem-v" style="color:var(--text)">55%</span></label>
+        <div class="rangefield"><input type="range" id="gr-gem" min="5" max="95" value="55"><span style="font-family:var(--mono);font-size:12px;color:var(--muted)">%</span></div></div>
+      <div class="field"><label>Grading fee + shipping per card <span id="gr-fee-v" style="color:var(--text)">$25</span></label>
+        <div class="rangefield"><input type="range" id="gr-fee" min="10" max="120" value="25"><span style="font-family:var(--mono);font-size:12px;color:var(--muted)">USD</span></div></div>
+      <button class="btn foil" id="gr-run" style="width:100%">Compute grading EV</button>
+    </div>
+    <div class="panel"><h3>Submission EV</h3><div id="gr-out" class="empty">Enter a card to see whether grading beats selling raw.</div></div>
+  </div>`;
+}
+function runGrading(){
+  const raw=+$("#gr-raw").value, p10=+$("#gr-psa10").value;
+  const p9 = +$("#gr-psa9").value || raw*0.75;
+  const gem=+$("#gr-gem").value/100, fee=+$("#gr-fee").value;
+  const ev = gem*p10 + (1-gem)*p9 - fee;
+  const edge = ev-raw;
+  const be = (raw+fee-p9)/(p10-p9); // break-even gem rate
+  const verdict = edge>raw*0.1 ? "GRADE" : edge>0 ? "MARGINAL" : "SELL RAW";
+  $("#gr-out").innerHTML = `
+  <div class="dialwrap"><div class="verdict-word">${verdict}</div></div>
+  <div class="verdict-sub">
+    Expected value graded: <b>${fmt2(ev)}</b> vs raw <b>${fmt2(raw)}</b><br>
+    Edge per card: <b class="${cls(edge)}">${(edge>=0?"+":"")+fmt2(Math.abs(edge)).slice(edge<0?0:0)}</b> (${pct(edge/raw*100)})<br>
+    Break-even gem rate: <b>${(Math.max(0,Math.min(1,be))*100).toFixed(0)}%</b> — you assume <b>${(gem*100).toFixed(0)}%</b>
+  </div>`;
+}
+
+function vSimulator(preselect){
+  const opts = PRODUCTS.map(p=>`<option value="${p.id}" ${p.id===preselect?"selected":""}>${setOf(p.set).name} — ${p.name}</option>`).join("");
+  return `
+  <h1 class="pagetitle">Break Simulator</h1>
+  <p class="pagesub">Rip a product virtually using its real pull rates. Every run is a fresh random break — feel the variance before you spend the money. Great content for break streams, too.</p>
+  <div class="panel">
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+      <div class="field" style="flex:1;min-width:240px;margin:0"><label>Product</label><select id="sim-prod">${opts}</select></div>
+      <button class="btn foil" id="sim-run">Rip it</button>
+    </div>
+    <div id="sim-out"></div>
+  </div>`;
+}
+function runSim(){
+  const p = prodOf($("#sim-prod").value);
+  const cards = CARDS[p.set]||[];
+  const pulls=[]; let hitValue=0;
+  for(let i=0;i<p.packs;i++){
+    let best=null;
+    cards.forEach(c=>{ if(Math.random()<c.rate){ if(!best||c.raw>best.raw) best=c; } });
+    if(best){ pulls.push(best); hitValue+=best.raw; }
+  }
+  const total = hitValue + FILLER_PER_PACK*p.packs;
+  const net = total*(1-SELL_FEES);
+  const cost = price(p);
+  const roi = (net/cost-1)*100;
+  pulls.sort((a,b)=>b.raw-a.raw);
+  const shown = pulls.slice(0,24);
+  $("#sim-out").innerHTML = `
+    <div class="packgrid">${shown.length?shown.map((c,i)=>`<div class="pull ${c.raw>=100?'hit':''}" style="animation-delay:${i*45}ms"><div>${c.name}</div><div class="pr">${fmt(c.raw)}</div></div>`).join(""):'<div class="empty" style="grid-column:1/-1">Nothing but bulk this time. That, right there, is variance.</div>'}</div>
+    ${pulls.length>24?`<div class="prodmeta" style="margin-top:8px">+ ${pulls.length-24} smaller hits not shown</div>`:""}
+    <div class="simscore">
+      Hits: <b>${pulls.length}</b> · Hit value: <b>${fmt(hitValue)}</b> · With bulk: <b>${fmt(Math.round(total))}</b><br>
+      Net after fees: <b>${fmt(Math.round(net))}</b> vs cost <b>${fmt(cost)}</b> → this break: <b class="${cls(roi)}">${pct(roi)}</b>
+    </div>`;
+}
+
+/* ---------- Watchlist / Portfolio ---------- */
+function isWatched(id){ return store.get("tcgx.watch",[]).includes(id); }
+function toggleWatch(id){
+  let w = store.get("tcgx.watch",[]);
+  w = w.includes(id) ? w.filter(x=>x!==id) : [...w,id];
+  store.set("tcgx.watch",w);
+  toast(w.includes(id)?"Added to watchlist":"Removed from watchlist");
+  render();
+}
+function vWatchlist(){
+  const w = store.get("tcgx.watch",[]).map(prodOf).filter(Boolean);
+  if(!w.length) return `<h1 class="pagetitle">Watchlist</h1><div class="panel"><div class="empty">Nothing watched yet. Hit the ☆ on any product in <b>Markets</b> and it lands here with live verdict tracking.</div></div>`;
+  return `
+  <h1 class="pagetitle">Watchlist</h1>
+  <p class="pagesub">Your shortlist, always with the current verdict. When the engine flips a product from HOLD to BREAK, you'll see it here first.</p>
+  <div class="panel" style="overflow-x:auto"><table>
+    <thead><tr><th>Product</th><th class="num">Market</th><th class="num">7d</th><th class="num">Break ROI</th><th>30d</th><th class="num">Verdict</th><th></th></tr></thead><tbody>
+    ${w.map(p=>{const v=valuation(p);return `<tr class="rowlink" data-prod="${p.id}">
+      <td><div class="prodname">${setOf(p.set).name}</div><div class="prodmeta">${p.name}</div></td>
+      <td class="num">${fmt(v.mkt)}</td><td class="num ${cls(chgPct(p,7))}">${pct(chgPct(p,7))}</td>
+      <td class="num ${cls(v.breakROI)}">${pct(v.breakROI)}</td><td>${sparkline(p)}</td>
+      <td class="num"><span class="badge ${v.verdict.toLowerCase()}">${v.verdict}</span></td>
+      <td class="num"><button class="btn ghost sm" data-watch="${p.id}">★</button></td></tr>`;}).join("")}
+  </tbody></table></div>`;
+}
+function vPortfolio(){
+  const port = store.get("tcgx.port",[]);
+  const opts = PRODUCTS.map(p=>`<option value="${p.id}">${setOf(p.set).name} — ${p.name}</option>`).join("");
+  let rows="", totCost=0, totVal=0;
+  port.forEach((h,i)=>{
+    const p=prodOf(h.id); if(!p) return;
+    const val=price(p)*h.qty, cost=h.cost*h.qty, pl=(val/cost-1)*100;
+    totCost+=cost; totVal+=val;
+    rows+=`<tr class="rowlink" data-prod="${p.id}">
+      <td><div class="prodname">${setOf(p.set).name}</div><div class="prodmeta">${p.name}</div></td>
+      <td class="num">${h.qty}</td><td class="num">${fmt(h.cost)}</td><td class="num">${fmt(price(p))}</td>
+      <td class="num">${fmt(Math.round(val))}</td><td class="num ${cls(pl)}">${pct(pl)}</td>
+      <td class="num"><button class="btn danger sm" data-delport="${i}">✕</button></td></tr>`;
+  });
+  const totPL = totCost? (totVal/totCost-1)*100 : 0;
+  return `
+  <h1 class="pagetitle">Portfolio</h1>
+  <p class="pagesub">Track your actual sealed positions against live market value — and against what the engine says they'd return broken.</p>
+  <div class="grid g-3" style="margin-bottom:16px">
+    <div class="panel stat"><div class="v">${fmt(Math.round(totVal))}</div><div class="lbl">Market value</div></div>
+    <div class="panel stat"><div class="v">${fmt(Math.round(totCost))}</div><div class="lbl">Cost basis</div></div>
+    <div class="panel stat"><div class="v ${cls(totPL)}">${pct(totPL)}</div><div class="lbl">Unrealised P/L</div></div>
+  </div>
+  <div class="panel" style="margin-bottom:16px">
+    <h3>Add position</h3>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+      <div class="field" style="flex:2;min-width:220px;margin:0"><label>Product</label><select id="pf-prod">${opts}</select></div>
+      <div class="field" style="width:110px;margin:0"><label>Qty</label><input type="number" id="pf-qty" value="1" min="1"></div>
+      <div class="field" style="width:150px;margin:0"><label>Cost each (USD)</label><input type="number" id="pf-cost" value="0" min="0"></div>
+      <button class="btn" id="pf-add">Add</button>
+    </div>
+  </div>
+  ${port.length?`<div class="panel" style="overflow-x:auto"><table>
+    <thead><tr><th>Product</th><th class="num">Qty</th><th class="num">Cost</th><th class="num">Market</th><th class="num">Value</th><th class="num">P/L</th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`
+  :`<div class="panel"><div class="empty">No positions yet. Add your sealed inventory above to see live P/L.</div></div>`}`;
+}
+
+function vNews(activeTag){
+  const tags=[...new Set(NEWS.flatMap(n=>n.tags))];
+  const list = NEWS.filter(n=>!activeTag||n.tags.includes(activeTag));
+  return `
+  <h1 class="pagetitle">News wire</h1>
+  <p class="pagesub">Market-moving headlines with the valuation angle attached — what each story means for break, hold and grade decisions.</p>
+  <div class="news-tags" style="margin-bottom:16px">
+    <button class="tagchip ${!activeTag?'on':''}" data-tag="">All</button>
+    ${tags.map(t=>`<button class="tagchip ${t===activeTag?'on':''}" data-tag="${t}">${t}</button>`).join("")}
+  </div>
+  <div class="panel">
+    ${list.map(n=>`<div class="news-item"><div class="news-time">${n.ago} ago</div><div>
+      <div class="news-title">${n.t}</div><div class="news-body">${n.b}</div>
+      <div class="news-tags">${n.tags.map(t=>`<button class="tagchip" data-tag="${t}">${t}</button>`).join("")}</div>
+    </div></div>`).join("")}
+  </div>`;
+}
+
+/* ---------- Charts ---------- */
+Chart.defaults.color = "#8a93b2";
+Chart.defaults.font.family = "'JetBrains Mono', monospace";
+Chart.defaults.font.size = 10.5;
+function lineChart(el, labels, data, color){
+  const ctx = document.getElementById(el); if(!ctx) return;
+  const g = ctx.getContext("2d").createLinearGradient(0,0,0,ctx.height||200);
+  g.addColorStop(0, color.replace(")",",.22)").replace("rgb","rgba"));
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  charts.push(new Chart(ctx,{type:"line",data:{labels,datasets:[{data,borderColor:color,backgroundColor:g,fill:true,tension:.3,pointRadius:0,borderWidth:1.8}]},
+    options:{responsive:true,plugins:{legend:{display:false},tooltip:{mode:"index",intersect:false,backgroundColor:"#161b34",borderColor:"rgba(140,150,200,.3)",borderWidth:1}},
+    scales:{x:{grid:{display:false},ticks:{maxTicksLimit:6}},y:{grid:{color:"rgba(140,150,200,.08)"},ticks:{maxTicksLimit:5}}},interaction:{mode:"index",intersect:false}}}));
+}
+
+/* ---------- Router / render ---------- */
+let newsTag = "";
+function render(){
+  killCharts();
+  document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active", b.dataset.view===currentView));
+  if(currentView==="dashboard") viewEl.innerHTML = vDashboard();
+  else if(currentView==="markets") viewEl.innerHTML = vMarkets();
+  else if(currentView==="detail") viewEl.innerHTML = vDetail(detailId);
+  else if(currentView==="engine"){ viewEl.innerHTML = vEngine(); runEngine(); }
+  else if(currentView==="grading"){ viewEl.innerHTML = vGrading(); runGrading(); }
+  else if(currentView==="simulator") viewEl.innerHTML = vSimulator(detailId);
+  else if(currentView==="watchlist") viewEl.innerHTML = vWatchlist();
+  else if(currentView==="portfolio") viewEl.innerHTML = vPortfolio();
+  else if(currentView==="news") viewEl.innerHTML = vNews(newsTag);
+
+  if(currentView==="dashboard") lineChart("idxchart", IDX.map(x=>x.d.slice(5)), IDX.map(x=>x.v), "rgb(129,140,248)");
+  if(currentView==="detail" && prodOf(detailId)){
+    const h = HIST[detailId];
+    lineChart("detchart", h.map(x=>x.d.slice(5)), h.map(x=>x.v), chgPct(prodOf(detailId),30)>=0?"rgb(52,211,153)":"rgb(251,113,133)");
+  }
+  window.scrollTo({top:0});
+}
+function go(view, id){ currentView=view; detailId=id??detailId; render(); }
+
+/* ---------- Events (delegated) ---------- */
+document.addEventListener("click", e=>{
+  const nav = e.target.closest(".navbtn"); if(nav){ go(nav.dataset.view, null); return; }
+  const gt = e.target.closest("[data-goto]"); if(gt){ go(gt.dataset.goto); return; }
+  const w = e.target.closest("[data-watch]"); if(w){ e.stopPropagation(); toggleWatch(w.dataset.watch); return; }
+  const dp = e.target.closest("[data-delport]"); if(dp){ const port=store.get("tcgx.port",[]); port.splice(+dp.dataset.delport,1); store.set("tcgx.port",port); render(); return; }
+  const ap = e.target.closest("[data-addport]"); if(ap){ go("portfolio"); setTimeout(()=>{ $("#pf-prod").value=ap.dataset.addport; $("#pf-cost").value=Math.round(price(prodOf(ap.dataset.addport))); },0); return; }
+  const sim = e.target.closest("[data-sim]"); if(sim){ go("simulator", sim.dataset.sim); setTimeout(runSim,60); return; }
+  const row = e.target.closest("tr[data-prod]"); if(row){ go("detail", row.dataset.prod); return; }
+  const tag = e.target.closest("[data-tag]"); if(tag!==null && tag!==undefined && tag.dataset){ if(tag.classList.contains("tagchip")){ newsTag=tag.dataset.tag; render(); return; } }
+  if(e.target.id==="eng-run") runEngine();
+  if(e.target.id==="gr-run") runGrading();
+  if(e.target.id==="sim-run") runSim();
+  if(e.target.id==="pf-add"){
+    const port=store.get("tcgx.port",[]);
+    const id=$("#pf-prod").value, qty=+$("#pf-qty").value||1;
+    const cost=+$("#pf-cost").value||Math.round(price(prodOf(id)));
+    port.push({id,qty,cost}); store.set("tcgx.port",port); toast("Position added"); render();
+  }
+});
+document.addEventListener("input", e=>{
+  if(e.target.id==="eng-fee") $("#eng-fee-v").textContent = e.target.value+"%";
+  if(e.target.id==="eng-gfee") $("#eng-gfee-v").textContent = "$"+e.target.value;
+  if(e.target.id==="gr-gem") $("#gr-gem-v").textContent = e.target.value+"%";
+  if(e.target.id==="gr-fee") $("#gr-fee-v").textContent = "$"+e.target.value;
+  if(e.target.id==="searchbox") doSearch(e.target.value);
+});
+
+/* ---------- Search ---------- */
+function doSearch(q){
+  const box=$("#searchresults");
+  if(!q || q.length<2){ box.classList.remove("open"); return; }
+  const ql=q.toLowerCase();
+  const hits = PRODUCTS.filter(p => (setOf(p.set).name+" "+p.name+" "+p.id).toLowerCase().includes(ql)).slice(0,8);
+  box.innerHTML = hits.length ? hits.map(p=>`<button class="sr-item" data-prod-search="${p.id}">
+    <span>${setOf(p.set).name} — ${p.name}</span><span class="m">${fmt(price(p))}</span></button>`).join("")
+  : `<div class="sr-item" style="cursor:default"><span class="m">No matches for "${q}"</span></div>`;
+  box.classList.add("open");
+}
+document.addEventListener("click", e=>{
+  const s=e.target.closest("[data-prod-search]");
+  if(s){ $("#searchresults").classList.remove("open"); $("#searchbox").value=""; go("detail", s.dataset.prodSearch); }
+  else if(!e.target.closest(".search")) $("#searchresults").classList.remove("open");
+});
+
+/* ---------- Clock + index pill ---------- */
+function tickClock(){
+  $("#pill-clock").textContent = new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",second:"2-digit"}) + " UTC" ;
+}
+setInterval(tickClock,1000); tickClock();
+const idxNow=IDX[IDX.length-1].v, idxD=IDX[IDX.length-2].v;
+$("#pill-index").textContent = idxNow.toFixed(1);
+$("#pill-index-chg").innerHTML = `<span class="${cls(idxNow-idxD)}" style="font-family:var(--mono)">${pct((idxNow/idxD-1)*100)}</span>`;
+
+/* ---------- Boot ---------- */
+buildTicker();
+render();
+tryLiveData();
+</script>
+</body>
+</html>
