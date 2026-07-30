@@ -342,7 +342,16 @@ const API_BASE = "https://tcgx-api.kronborgnielsen.workers.dev";
    const FIREBASE_CONFIG = { apiKey:"...", authDomain:"...", projectId:"...", appId:"..." };
    Then add your GitHub Pages domain under Authentication → Settings → Authorized domains,
    and create a Firestore database (production mode) with the rules from the setup notes. */
-const FIREBASE_CONFIG = null;
+const firebaseConfig = {
+  apiKey: "AIzaSyBY9bgvksoGoZzP10k22g1yWXcaIJwq5ps",
+  authDomain: "tcgx-5591e.firebaseapp.com",
+  projectId: "tcgx-5591e",
+  storageBucket: "tcgx-5591e.firebasestorage.app",
+  messagingSenderId: "808271920262",
+  appId: "1:808271920262:web:9b9fa4ea8c77883ad0a507",
+  measurementId: "G-TM7K6FJMT4"
+};
+
 
 /* ---------- Storage (safe wrapper: falls back to memory) ---------- */
 const store = (() => {
