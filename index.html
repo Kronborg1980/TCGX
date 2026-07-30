@@ -8,7 +8,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  
 <style>
 :root{
   --ink:#0b0e1a;
@@ -302,7 +301,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;heigh
    Single-file app. Set API_BASE to your Cloudflare Worker URL
    to switch from demo data to live D1 data.
    ============================================================ */
-const API_BASE = "https://tcgx-api.kronborgnielsen.workers.dev"; // e.g. "https://tcgx-api.yourname.workers.dev"
+const API_BASE = "https://tcgx-api.kronborgnielsen.workers.dev";
 
 /* ---------- Storage (safe wrapper: falls back to memory) ---------- */
 const store = (() => {
@@ -483,7 +482,7 @@ function indexSeries(){
   }
   return out;
 }
-const IDX = indexSeries();
+let IDX = indexSeries();
 
 /* ---------- Demo news wire ---------- */
 const NEWS = [
@@ -508,6 +507,9 @@ async function tryLiveData(){
       if(p && row.market_price_usd){ p.base = row.market_price_usd; HIST[p.id] = history(p); }
     });
     document.getElementById("datasource").innerHTML = '<span class="dot"></span>Live feed · Cloudflare D1';
+    IDX = indexSeries();
+    buildTicker();
+    updateIndexPill();
     render();
   }catch(e){ /* stay on demo data */ }
 }
@@ -791,7 +793,7 @@ function runGrading(){
   <div class="dialwrap"><div class="verdict-word">${verdict}</div></div>
   <div class="verdict-sub">
     Expected value graded: <b>${fmt2(ev)}</b> vs raw <b>${fmt2(raw)}</b><br>
-    Edge per card: <b class="${cls(edge)}">${(edge>=0?"+":"")+fmt2(Math.abs(edge)).slice(edge<0?0:0)}</b> (${pct(edge/raw*100)})<br>
+    Edge per card: <b class="${cls(edge)}">${(edge>=0?"+":"\u2212")+fmt2(Math.abs(edge))}</b> (${pct(edge/raw*100)})<br>
     Break-even gem rate: <b>${(Math.max(0,Math.min(1,be))*100).toFixed(0)}%</b> — you assume <b>${(gem*100).toFixed(0)}%</b>
   </div>`;
 }
@@ -1002,9 +1004,12 @@ function tickClock(){
   $("#pill-clock").textContent = new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",second:"2-digit"}) + " UTC" ;
 }
 setInterval(tickClock,1000); tickClock();
-const idxNow=IDX[IDX.length-1].v, idxD=IDX[IDX.length-2].v;
-$("#pill-index").textContent = idxNow.toFixed(1);
-$("#pill-index-chg").innerHTML = `<span class="${cls(idxNow-idxD)}" style="font-family:var(--mono)">${pct((idxNow/idxD-1)*100)}</span>`;
+function updateIndexPill(){
+  const idxNow=IDX[IDX.length-1].v, idxD=IDX[IDX.length-2].v;
+  $("#pill-index").textContent = idxNow.toFixed(1);
+  $("#pill-index-chg").innerHTML = `<span class="${cls(idxNow-idxD)}" style="font-family:var(--mono)">${pct((idxNow/idxD-1)*100)}</span>`;
+}
+updateIndexPill();
 
 /* ---------- Boot ---------- */
 buildTicker();
