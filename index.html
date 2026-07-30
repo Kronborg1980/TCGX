@@ -8,6 +8,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;900&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
 :root{
   --ink:#0b0e1a;
@@ -121,6 +124,11 @@ a{color:inherit}
   border:1px solid var(--line);color:var(--muted);background:rgba(22,27,52,.4)
 }
 .pill b{color:var(--text);font-weight:500}
+.seg{display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:rgba(22,27,52,.4)}
+.seg button{font-family:var(--mono);font-size:11px;padding:7px 13px;color:var(--muted);transition:all .15s}
+.seg button.on{background:rgba(129,140,248,.18);color:#c3cbff}
+.pill.acct{cursor:pointer;transition:all .15s}
+.pill.acct:hover{color:var(--text);border-color:var(--line-strong)}
 
 /* ---------- Panels / cards ---------- */
 .grid{display:grid;gap:16px}
@@ -305,8 +313,14 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;heigh
         <input id="searchbox" placeholder="Search sets, cases, booster boxes… (e.g. Prismatic, OP-05)" autocomplete="off">
         <div class="search-results" id="searchresults"></div>
       </div>
+      <div class="seg" id="gameseg">
+        <button data-game="All" class="on">All</button>
+        <button data-game="Pokémon">Pokémon</button>
+        <button data-game="One Piece">One Piece</button>
+      </div>
       <div class="pill">TCGX INDEX <b id="pill-index">—</b> <span id="pill-index-chg"></span></div>
       <div class="pill" id="pill-clock">—</div>
+      <button class="pill acct" id="acctbtn">Sign in</button>
     </div>
     <div id="view"></div>
   </main>
@@ -323,13 +337,21 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;heigh
    ============================================================ */
 const API_BASE = "https://tcgx-api.kronborgnielsen.workers.dev";
 
+/* To enable login: Firebase console → create project → Authentication → enable
+   Google sign-in → Project settings → add a Web app → paste its config here:
+   const FIREBASE_CONFIG = { apiKey:"...", authDomain:"...", projectId:"...", appId:"..." };
+   Then add your GitHub Pages domain under Authentication → Settings → Authorized domains,
+   and create a Firestore database (production mode) with the rules from the setup notes. */
+const FIREBASE_CONFIG = null;
+
 /* ---------- Storage (safe wrapper: falls back to memory) ---------- */
 const store = (() => {
   let mem = {};
   const ok = (() => { try { localStorage.setItem("__t","1"); localStorage.removeItem("__t"); return true; } catch(e){ return false; } })();
   return {
     get(k, d){ try { const v = ok ? localStorage.getItem(k) : mem[k]; return v ? JSON.parse(v) : d; } catch(e){ return d; } },
-    set(k, v){ try { ok ? localStorage.setItem(k, JSON.stringify(v)) : (mem[k]=JSON.stringify(v)); } catch(e){} }
+    set(k, v){ try { ok ? localStorage.setItem(k, JSON.stringify(v)) : (mem[k]=JSON.stringify(v)); } catch(e){}
+      if(k==="tcgx.watch"||k==="tcgx.port"){ try{ cloudSave(); }catch(e){} } }
   };
 })();
 
@@ -461,6 +483,10 @@ const prodOf = id => PRODUCTS.find(p=>p.id===id);
 const price = p => HIST[p.id][HIST[p.id].length-1].v;
 const chgPct = (p, days) => { const h=HIST[p.id]; const a=h[h.length-1-days].v, b=h[h.length-1].v; return (b/a-1)*100; };
 
+/* ---------- Sitewide game filter (All / Pokémon / One Piece) ---------- */
+let gameFilter = store.get("tcgx.game","All");
+const filtered = () => gameFilter==="All" ? PRODUCTS : PRODUCTS.filter(p => setOf(p.set).game === gameFilter);
+
 /* ---------- Valuation engine ---------- */
 function evPerPack(setId){
   return (CARDS[setId]||[]).reduce((s,c)=>s + c.rate*c.raw, 0) + FILLER_PER_PACK;
@@ -493,16 +519,17 @@ function heat(p){ // momentum score 0-100
 }
 
 /* ---------- Index ---------- */
-function indexSeries(){
-  const days = HIST[PRODUCTS[0].id].length;
+function indexSeries(list){
+  const L = (list && list.length) ? list : PRODUCTS;
+  const days = HIST[L[0].id].length;
   const out=[];
   for(let i=0;i<days;i++){
-    let sum=0; PRODUCTS.forEach(p=>{ sum += HIST[p.id][i].v / HIST[p.id][0].v; });
-    out.push({d: HIST[PRODUCTS[0].id][i].d, v: +(100*sum/PRODUCTS.length).toFixed(2)});
+    let sum=0; L.forEach(p=>{ sum += HIST[p.id][i].v / HIST[p.id][0].v; });
+    out.push({d: HIST[L[0].id][i].d, v: +(100*sum/L.length).toFixed(2)});
   }
   return out;
 }
-let IDX = indexSeries();
+let IDX = indexSeries(filtered());
 
 /* ---------- Demo news wire ---------- */
 const NEWS = [
@@ -514,6 +541,16 @@ const NEWS = [
   {t:"Cardmarket fee update: private seller commission unchanged for 2026", ago:"3d", tags:["Marketplaces","Fees"], b:"The default 13% net-of-fees haircut in the valuation engine remains a reasonable EU assumption. US-only sellers on eBay should model 14–15% with shipping."},
   {t:"Terastal Festival (JP) singles index up 9% month-over-month", ago:"4d", tags:["Pokémon","Japan"], b:"Eevee ex SAR leads. JP high-rarity gem rates (~60%+) keep GRADE verdicts more common on Japanese product than English."},
 ];
+
+function agoStr(d){
+  if(!d) return "";
+  const t = new Date(String(d).replace(" ","T") + (String(d).includes("Z")?"":"Z"));
+  const m = (Date.now()-t)/60000;
+  if(!(m>=0)) return "";
+  if(m<60) return Math.max(1,Math.round(m))+"m";
+  if(m<1440) return Math.round(m/60)+"h";
+  return Math.round(m/1440)+"d";
+}
 
 /* ---------- Live-data hook (Cloudflare Worker) ---------- */
 async function tryLiveData(){
@@ -528,11 +565,61 @@ async function tryLiveData(){
     });
     document.getElementById("datasource").innerHTML = '<span class="dot"></span>Live feed · Cloudflare D1';
     document.getElementById("datasource").nextElementSibling.textContent = "Nightly prices via GitHub Actions · Cloudflare D1";
-    IDX = indexSeries();
+    try{
+      const nr = await fetch(API_BASE + "/api/news");
+      if(nr.ok){
+        const rows = await nr.json();
+        if(Array.isArray(rows) && rows.length >= 3){
+          NEWS.length = 0;
+          rows.forEach(n=>NEWS.push({t:n.title, b:n.body||"", tags:(n.tags||"").split(",").map(x=>x.trim()).filter(Boolean), ago:agoStr(n.published_at)}));
+        }
+      }
+    }catch(e){ /* keep demo headlines */ }
+    IDX = indexSeries(filtered());
     buildTicker();
     updateIndexPill();
     render();
   }catch(e){ /* stay on demo data */ }
+}
+
+/* ---------- Login & cloud profile (optional, Firebase) ---------- */
+let fbUser = null, fbDb = null;
+function initAuth(){
+  const btn = document.getElementById("acctbtn");
+  if(!FIREBASE_CONFIG || typeof firebase === "undefined"){
+    btn.onclick = () => toast("Login isn't set up yet — see FIREBASE_CONFIG in index.html");
+    return;
+  }
+  firebase.initializeApp(FIREBASE_CONFIG);
+  fbDb = firebase.firestore();
+  firebase.auth().onAuthStateChanged(async u=>{
+    fbUser = u;
+    btn.textContent = u ? ((u.displayName||"Account").split(" ")[0] + " · Sign out") : "Sign in";
+    if(u){ await cloudLoad(); render(); }
+  });
+  btn.onclick = ()=>{
+    if(fbUser) firebase.auth().signOut();
+    else firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(e=>toast(e.message));
+  };
+}
+async function cloudLoad(){
+  try{
+    const snap = await fbDb.collection("users").doc(fbUser.uid).get();
+    if(snap.exists){
+      const d = snap.data();
+      if(Array.isArray(d.watch)) store.set("tcgx.watch", d.watch);
+      if(Array.isArray(d.port))  store.set("tcgx.port",  d.port);
+      toast("Profile loaded");
+    } else { cloudSave(); toast("Profile created"); }
+  }catch(e){}
+}
+function cloudSave(){
+  if(!fbUser || !fbDb) return;
+  fbDb.collection("users").doc(fbUser.uid).set({
+    watch: store.get("tcgx.watch",[]),
+    port:  store.get("tcgx.port",[]),
+    updated: new Date().toISOString()
+  }).catch(()=>{});
 }
 
 /* ============================================================
@@ -611,7 +698,7 @@ function sparkline(p){
 
 /* ---------- Ticker ---------- */
 function buildTicker(){
-  const items = PRODUCTS.map(p=>{
+  const items = filtered().map(p=>{
     const c = chgPct(p,1);
     const sym = p.id.toUpperCase().replace(/-/g,".");
     return `<span class="tk"><span class="sym">${sym}</span><span>${fmt(price(p))}</span><span class="${c>=0?'u':'d'}">${pct(c)}</span></span>`;
@@ -648,17 +735,18 @@ function dialHTML(v){
 
 /* ---------- Views ---------- */
 function vDashboard(){
-  const movers = [...PRODUCTS].sort((a,b)=>Math.abs(chgPct(b,7))-Math.abs(chgPct(a,7))).slice(0,5);
-  const breaks = PRODUCTS.map(p=>({p,v:valuation(p)})).sort((a,b)=>Math.max(b.v.breakROI,b.v.gradeROI)-Math.max(a.v.breakROI,a.v.gradeROI)).slice(0,5);
+  const P = filtered();
+  const movers = [...P].sort((a,b)=>Math.abs(chgPct(b,7))-Math.abs(chgPct(a,7))).slice(0,5);
+  const breaks = P.map(p=>({p,v:valuation(p)})).sort((a,b)=>Math.max(b.v.breakROI,b.v.gradeROI)-Math.max(a.v.breakROI,a.v.gradeROI)).slice(0,5);
   const idxNow = IDX[IDX.length-1].v, idxPrev = IDX[IDX.length-31].v;
   return `
   <h1 class="pagetitle">Trading floor</h1>
   <p class="pagesub">The whole sealed market at a glance — the index, what's moving, and where the math says the cardboard is worth more open than closed.</p>
   <div class="grid g-4" style="margin-bottom:16px">
     <div class="panel stat"><div class="v">${idxNow.toFixed(1)}</div><div class="lbl">TCGX Sealed Index ${hint("index")}</div><div class="chg ${cls(idxNow-idxPrev)}">${pct((idxNow/idxPrev-1)*100)} · 30d</div></div>
-    <div class="panel stat"><div class="v">${PRODUCTS.filter(p=>valuation(p).verdict==="BREAK").length}</div><div class="lbl">Products in BREAK zone ${hint("breakzone")}</div><div class="chg neu">of ${PRODUCTS.length} tracked</div></div>
-    <div class="panel stat"><div class="v">${pct(Math.max(...PRODUCTS.map(p=>valuation(p).breakROI)))}</div><div class="lbl">Best break ROI on the board ${hint("breakroi")}</div><div class="chg pos">net of ${(SELL_FEES*100).toFixed(0)}% fees</div></div>
-    <div class="panel stat"><div class="v">${pct(Math.max(...PRODUCTS.map(p=>valuation(p).cagr)))}</div><div class="lbl">Best 12-month hold ${hint("besthold")}</div><div class="chg pos">sealed appreciation</div></div>
+    <div class="panel stat"><div class="v">${P.filter(p=>valuation(p).verdict==="BREAK").length}</div><div class="lbl">Products in BREAK zone ${hint("breakzone")}</div><div class="chg neu">of ${P.length} tracked</div></div>
+    <div class="panel stat"><div class="v">${pct(Math.max(...P.map(p=>valuation(p).breakROI)))}</div><div class="lbl">Best break ROI on the board ${hint("breakroi")}</div><div class="chg pos">net of ${(SELL_FEES*100).toFixed(0)}% fees</div></div>
+    <div class="panel stat"><div class="v">${pct(Math.max(...P.map(p=>valuation(p).cagr)))}</div><div class="lbl">Best 12-month hold ${hint("besthold")}</div><div class="chg pos">sealed appreciation</div></div>
   </div>
   <div class="grid g-2">
     <div class="panel" style="grid-column:1/-1">
@@ -691,7 +779,7 @@ function vDashboard(){
 }
 
 function vMarkets(){
-  const rows = PRODUCTS.map(p=>{
+  const rows = filtered().map(p=>{
     const v = valuation(p);
     return `<tr class="rowlink" data-prod="${p.id}">
       <td><div class="prodname">${setOf(p.set).name}${p.hot?'<span class="hotdot"></span>':''}</div><div class="prodmeta">${p.name} · <span class="badge game">${setOf(p.set).game}</span></div></td>
@@ -788,7 +876,7 @@ function vDetail(id){
 }
 
 function vEngine(){
-  const opts = PRODUCTS.map(p=>`<option value="${p.id}">${setOf(p.set).name} — ${p.name}</option>`).join("");
+  const opts = filtered().map(p=>`<option value="${p.id}">${setOf(p.set).name} — ${p.name}</option>`).join("");
   return `
   <h1 class="pagetitle">Break vs Hold engine</h1>
   <p class="pagesub">Pick a product, set your actual buy-in and fee assumptions, and the engine computes the full statistical picture: open it, grade the hits, or leave it sealed.</p>
@@ -867,7 +955,7 @@ function runGrading(){
 }
 
 function vSimulator(preselect){
-  const opts = PRODUCTS.map(p=>`<option value="${p.id}" ${p.id===preselect?"selected":""}>${setOf(p.set).name} — ${p.name}</option>`).join("");
+  const opts = filtered().map(p=>`<option value="${p.id}" ${p.id===preselect?"selected":""}>${setOf(p.set).name} — ${p.name}</option>`).join("");
   return `
   <h1 class="pagetitle">Break Simulator</h1>
   <p class="pagesub">Rip a product virtually using its real pull rates. Every run is a fresh random break — feel the variance before you spend the money. Great content for break streams, too.</p>
@@ -876,6 +964,7 @@ function vSimulator(preselect){
       <div class="field" style="flex:1;min-width:240px;margin:0"><label>Product</label><select id="sim-prod">${opts}</select></div>
       <button class="btn foil" id="sim-run">Rip it</button>
     </div>
+    <div class="prodmeta" id="sim-info" style="margin-top:12px;font-size:12.5px"></div>
     <div id="sim-out"></div>
   </div>`;
 }
@@ -901,6 +990,13 @@ function runSim(){
       Hits: <b>${pulls.length}</b> · Hit value: <b>${fmt(hitValue)}</b> · With bulk: <b>${fmt(Math.round(total))}</b><br>
       Net after fees: <b>${fmt(Math.round(net))}</b> vs cost <b>${fmt(cost)}</b> → this break: <b class="${cls(roi)}">${pct(roi)}</b>
     </div>`;
+}
+
+function updateSimInfo(){
+  const el = $("#sim-info"); if(!el) return;
+  const p = prodOf($("#sim-prod").value); if(!p){ el.innerHTML=""; return; }
+  const v = valuation(p);
+  el.innerHTML = `Box price <b style="color:var(--text)">${fmt(v.mkt)}</b> · Net break value <b style="color:var(--text)">${fmt(v.netBreak)}</b> (${pct(v.breakROI)}) · <span class="badge ${v.verdict.toLowerCase()}">${v.verdict}</span> — one rip can land far from the average.`;
 }
 
 /* ---------- Watchlist / Portfolio ---------- */
@@ -1008,7 +1104,7 @@ function render(){
   else if(currentView==="detail") viewEl.innerHTML = vDetail(detailId);
   else if(currentView==="engine"){ viewEl.innerHTML = vEngine(); runEngine(); }
   else if(currentView==="grading"){ viewEl.innerHTML = vGrading(); runGrading(); }
-  else if(currentView==="simulator") viewEl.innerHTML = vSimulator(detailId);
+  else if(currentView==="simulator"){ viewEl.innerHTML = vSimulator(detailId); updateSimInfo(); }
   else if(currentView==="watchlist") viewEl.innerHTML = vWatchlist();
   else if(currentView==="portfolio") viewEl.innerHTML = vPortfolio();
   else if(currentView==="news") viewEl.innerHTML = vNews(newsTag);
@@ -1027,6 +1123,12 @@ document.addEventListener("click", e=>{
   const qm = e.target.closest(".qm");
   if(qm){ e.stopPropagation(); showHint(qm); return; }
   if(!e.target.closest("#hintpop")) hideHint();
+  const gs = e.target.closest("#gameseg button");
+  if(gs){
+    gameFilter = gs.dataset.game; store.set("tcgx.game", gameFilter);
+    document.querySelectorAll("#gameseg button").forEach(b=>b.classList.toggle("on", b.dataset.game===gameFilter));
+    IDX = indexSeries(filtered()); buildTicker(); updateIndexPill(); render(); return;
+  }
   const nav = e.target.closest(".navbtn"); if(nav){ go(nav.dataset.view, null); return; }
   const gt = e.target.closest("[data-goto]"); if(gt){ go(gt.dataset.goto); return; }
   const w = e.target.closest("[data-watch]"); if(w){ e.stopPropagation(); toggleWatch(w.dataset.watch); return; }
@@ -1051,6 +1153,10 @@ document.addEventListener("input", e=>{
   if(e.target.id==="gr-gem") $("#gr-gem-v").textContent = e.target.value+"%";
   if(e.target.id==="gr-fee") $("#gr-fee-v").textContent = "$"+e.target.value;
   if(e.target.id==="searchbox") doSearch(e.target.value);
+});
+document.addEventListener("change", e=>{
+  if(e.target.id==="sim-prod") updateSimInfo();
+  if(e.target.id==="eng-prod") runEngine();
 });
 
 /* ---------- Search ---------- */
@@ -1083,9 +1189,11 @@ function updateIndexPill(){
 updateIndexPill();
 
 /* ---------- Boot ---------- */
+document.querySelectorAll("#gameseg button").forEach(b=>b.classList.toggle("on", b.dataset.game===gameFilter));
 buildTicker();
 render();
 tryLiveData();
+initAuth();
 </script>
 </body>
 </html>
