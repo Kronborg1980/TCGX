@@ -342,7 +342,7 @@ const API_BASE = "https://tcgx-api.kronborgnielsen.workers.dev";
    const FIREBASE_CONFIG = { apiKey:"...", authDomain:"...", projectId:"...", appId:"..." };
    Then add your GitHub Pages domain under Authentication → Settings → Authorized domains,
    and create a Firestore database (production mode) with the rules from the setup notes. */
-const firebaseConfig = {
+const FIREBASE_CONFIG = {
   apiKey: "AIzaSyBY9bgvksoGoZzP10k22g1yWXcaIJwq5ps",
   authDomain: "tcgx-5591e.firebaseapp.com",
   projectId: "tcgx-5591e",
@@ -351,7 +351,6 @@ const firebaseConfig = {
   appId: "1:808271920262:web:9b9fa4ea8c77883ad0a507",
   measurementId: "G-TM7K6FJMT4"
 };
-
 
 /* ---------- Storage (safe wrapper: falls back to memory) ---------- */
 const store = (() => {
@@ -595,20 +594,42 @@ async function tryLiveData(){
 let fbUser = null, fbDb = null;
 function initAuth(){
   const btn = document.getElementById("acctbtn");
-  if(!FIREBASE_CONFIG || typeof firebase === "undefined"){
-    btn.onclick = () => toast("Login isn't set up yet — see FIREBASE_CONFIG in index.html");
+  if(!FIREBASE_CONFIG){
+    btn.onclick = () => toast("Login isn't set up yet — paste your Firebase config into FIREBASE_CONFIG in index.html");
     return;
   }
-  firebase.initializeApp(FIREBASE_CONFIG);
-  fbDb = firebase.firestore();
+  if(typeof firebase === "undefined"){
+    btn.onclick = () => toast("Firebase scripts didn't load — check your internet / ad-blocker and refresh");
+    return;
+  }
+  try{
+    firebase.initializeApp(FIREBASE_CONFIG);
+    fbDb = firebase.firestore();
+  }catch(e){
+    btn.onclick = () => toast("Firebase config error: " + e.message);
+    console.error("TCGX auth init:", e);
+    return;
+  }
+  firebase.auth().getRedirectResult().catch(e=>toast("Sign-in: " + e.message));
   firebase.auth().onAuthStateChanged(async u=>{
     fbUser = u;
     btn.textContent = u ? ((u.displayName||"Account").split(" ")[0] + " · Sign out") : "Sign in";
     if(u){ await cloudLoad(); render(); }
   });
   btn.onclick = ()=>{
-    if(fbUser) firebase.auth().signOut();
-    else firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(e=>toast(e.message));
+    if(fbUser){ firebase.auth().signOut(); return; }
+    toast("Opening Google sign-in…");
+    const prov = new firebase.auth.GoogleAuthProvider();
+    firebase.auth().signInWithPopup(prov).catch(e=>{
+      console.error("TCGX sign-in:", e);
+      const popupIssue = e && ["auth/popup-blocked","auth/cancelled-popup-request",
+        "auth/operation-not-supported-in-this-environment"].includes(e.code);
+      if(popupIssue){
+        firebase.auth().signInWithRedirect(prov).catch(err=>toast("Sign-in failed: " + err.message));
+      } else if(e.code !== "auth/popup-closed-by-user"){
+        toast("Sign-in failed: " + (e.message||e.code));
+      }
+    });
   };
 }
 async function cloudLoad(){
